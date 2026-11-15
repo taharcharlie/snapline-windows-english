@@ -73,7 +73,7 @@ namespace Snapline
             var heading = new Grid { Margin = new Thickness(0, 0, 0, 8) };
             var title = MemoTheme.Text("What is this screenshot for?", 16, Theme.Light);
             title.FontWeight = FontWeights.SemiBold; title.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(title);
-            var close = MemoTheme.Button("×", "Cancel caption editing"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = 19;
+            var close = MemoTheme.Button("×", "Cancel caption editing"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = Theme.Size(19);
             close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += delegate { Close(); }; heading.Children.Add(close); content.Children.Add(heading);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 5) };
             writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("66", Theme.White)), CornerRadius = Theme.Radius(6),
@@ -81,7 +81,7 @@ namespace Snapline
             Input = new TextBox { Text = shot.Remark ?? "", MaxLength = Store.MaxRemarkText, AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0), Padding = new Thickness(10, 8, 10, 8), FontSize = 13,
+                BorderThickness = new Thickness(0), Padding = new Thickness(10, 8, 10, 8), FontSize = Theme.Size(13),
                 Foreground = MemoTheme.Brush(Theme.Light), CaretBrush = MemoTheme.Brush(Theme.Accent) };
             AutomationProperties.SetAutomationId(Input, "RemarkInput"); AutomationProperties.SetName(Input, "Screenshot caption");
             TextBlock.SetLineHeight(Input, 21);
@@ -260,7 +260,7 @@ namespace Snapline
                 marker = new Border { Width = lead, Height = 12, CornerRadius = Theme.Radius(1.5),
                     Background = MemoTheme.Brush(Theme.Accent), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             marker.IsHitTestVisible = false; content.Children.Add(marker);
-            var label = new RemarkText { Text = summary, FontSize = 12, FontFamily = Theme.Font, Foreground = MemoTheme.Brush(Theme.Text) };
+            var label = new RemarkText { Text = summary, FontSize = Theme.Size(12), FontFamily = Theme.Font, Foreground = MemoTheme.Brush(Theme.Text) };
             label.MaxHeight = 20; label.ClipToBounds = true;
             label.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(label, 1); content.Children.Add(label); button.Content = content;
             AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");

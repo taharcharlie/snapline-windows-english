@@ -1,5 +1,6 @@
 // Snapline: a local screenshot shelf for Windows. MIT License.
 // One place for colours, fonts and corner shape. Palette: Base16 Ashes.
+using System;
 using System.Windows;
 using System.Windows.Media;
 
@@ -17,6 +18,10 @@ namespace Snapline
 
         internal const string FontName = "Barlow Condensed, Segoe UI";
         internal static readonly FontFamily Font = new FontFamily(FontName);
+
+        // Barlow Condensed is narrow, so every size in the app is scaled up from the original design.
+        internal const double FontScale = 1.2;
+        internal static double Size(double points) { return Math.Round(points * FontScale, 1); }
 
         // "#RRGGBB" plus a two-digit hex alpha gives "#AARRGGBB".
         internal static string Alpha(string alpha, string colour) { return "#" + alpha + colour.Substring(1); }

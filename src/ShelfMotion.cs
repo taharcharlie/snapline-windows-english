@@ -17,7 +17,7 @@ namespace Snapline
     {
         internal const double LetterSpacing = 0.55;
         internal string Text;
-        internal double FontSize = 12;
+        internal double FontSize = Theme.Size(12);
         internal FontFamily FontFamily = Theme.Font;
         internal Brush Foreground = MemoTheme.Brush(Theme.Text);
         FormattedText Format(string value)

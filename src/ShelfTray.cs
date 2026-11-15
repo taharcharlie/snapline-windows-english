@@ -65,8 +65,8 @@ namespace Snapline
             pinMenu = new Forms.ToolStripMenuItem("Keep visible", null, delegate { TogglePin(); });
             menu.Items.Add(pinMenu);
             menu.Opening += delegate { pinMenu.Checked = pinned; };
-            menu.Items.Add("Previous page", null, delegate { ChangePage(-1); Reveal(); });
-            menu.Items.Add("Next page", null, delegate { ChangePage(1); Reveal(); });
+            menu.Items.Add("Roll left", null, delegate { Reveal(); Roll(-1); });
+            menu.Items.Add("Roll right", null, delegate { Reveal(); Roll(1); });
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add(new Forms.ToolStripMenuItem("Only shortcut captures are collected") { Enabled = false });
             menu.Items.Add(new Forms.ToolStripSeparator());

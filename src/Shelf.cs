@@ -73,7 +73,6 @@ namespace Snapline
         internal Func<IntPtr> ForegroundWindow = Native.GetForegroundWindow;
         internal Func<Native.Point?> PointerPosition = delegate { Native.Point point; return Native.GetCursorPos(out point) ? (Native.Point?)point : null; };
 
-        int page;
         double shelfWidth;
         string toast = "";
         DateTime toastUntil;
@@ -99,9 +98,9 @@ namespace Snapline
             FontFamily = Theme.Font;
             UseLayoutRounding = true;
             int knownCount = store.Items.Count + store.Notes.Count;
-            store.Changed = delegate { int count = store.Items.Count + store.Notes.Count; bool deckChanged = count != knownCount; if (count > knownCount) page = 0; knownCount = count; Render(deckChanged); };
+            store.Changed = delegate { int count = store.Items.Count + store.Notes.Count; bool deckChanged = count != knownCount; if (count > knownCount) { first = 0; focus = 0; } knownCount = count; Render(deckChanged); };
             store.RemarkChanged = RefreshRemark;
-            canvas.MouseWheel += delegate(object sender, MouseWheelEventArgs e) { if (expanded) { ChangePage(e.Delta < 0 ? 1 : -1); e.Handled = true; } };
+            canvas.MouseWheel += delegate(object sender, MouseWheelEventArgs e) { if (expanded) { WheelBy(e.Delta); e.Handled = true; } };
             SourceInitialized += Initialize;
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (memoEditor != null && !memoEditor.FlushChanges()) e.Cancel = true; if (remarkEditor != null && !remarkEditor.TrySave()) e.Cancel = true; };
             Closed += Cleanup;
@@ -171,12 +170,15 @@ namespace Snapline
             if (msg == Native.Hotkey)
             {
                 if (w.ToInt32() == 1) { Toggle(); handled = true; }
+                else if (w.ToInt32() >= 20 && w.ToInt32() <= 24) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
                 else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
                 {
                     if (!editingShortcut) StartCapture(ShortcutCollects, ShortcutSpec.From(store.Settings).Key);
                     handled = true;
                 }
             }
+            // Horizontal wheel or a two-finger sideways swipe.
+            if (msg == 0x020E && expanded) { WheelBy(-(short)((w.ToInt64() >> 16) & 0xFFFF)); handled = true; }
             if ((uint)msg == Native.ShowMessage) { ToggleFromTray(); handled = true; }
             return IntPtr.Zero;
         }
@@ -209,7 +211,7 @@ namespace Snapline
             canvas.Height = open ? ShelfHeight + SlackDrop : 4;
             stage.Margin = new Thickness(0, lineTop, 0, 0);
             stage.Height = canvas.Height;
-            if (changed) page = 0;
+            if (changed) { first = 0; focus = 0; }
         }
         // Bottom edge of a komorebi bar docked at the top of this screen, in WPF units; 0 when there is none.
         double BarBottom(Drawing.Rectangle area, double scale)
@@ -257,6 +259,8 @@ namespace Snapline
         void Tick(object sender, EventArgs e)
         {
             if (shuttingDown) return;
+            // Typing into an editor or a dialog must never be taken over by the line keys.
+            if (lineKeys && (dialogOpen || memoEditor != null || remarkEditor != null || editingShortcut)) SetLineKeys(false);
             ProcessPending();
             if (dialogOpen || dragging || helpReading || capturePending) return;
             var point = PointerPosition(); if (!point.HasValue) return;
@@ -275,6 +279,7 @@ namespace Snapline
             bool inside = expanded && p.X >= screen.WorkingArea.Left && p.X < screen.WorkingArea.Right &&
                 p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + (266 + SlackDrop + lineTop) * Dpi();
             if (inside) lastInside = now;
+            else if (lineKeys && (Native.GetAsyncKeyState(0x01) & 0x8000) != 0) SetLineKeys(false); // Clicked into another app.
             if (expanded && !pinned && now > keepUntil && (now - lastInside).TotalMilliseconds > 700) Collapse(false);
             if (toast != "" && now > toastUntil) { toast = ""; UpdateToast(); }
         }
@@ -306,6 +311,7 @@ namespace Snapline
 
         void Collapse(bool manual, bool animate = true)
         {
+            SetLineKeys(false);
             if (manual) { pinned = false; hideUntil = DateTime.Now.AddSeconds(1); }
             CloseImagePreview(); CloseNotePreview(); if (helpTip != null) helpTip.IsOpen = false;
             if (collapsing && animate) return;
@@ -330,7 +336,7 @@ namespace Snapline
         void Toggle()
         {
             if (expanded && !collapsing) Collapse(true);
-            else { pinned = true; Reveal(); }
+            else { pinned = true; Reveal(); SetLineKeys(true); }
         }
         internal void ToggleFromTray()
         {
@@ -374,6 +380,7 @@ namespace Snapline
             store.RemarkChanged = null;
             transitionSerial++; shelfSlide.BeginAnimation(TranslateTransform.YProperty, null);
             ClearHoverEffects(); CloseFallingPapers();
+            SetLineKeys(false);
             tick.Stop(); captureDelay.Stop();
             CloseImagePreview(); CloseNotePreview();
             if (helpTip != null) helpTip.IsOpen = false;

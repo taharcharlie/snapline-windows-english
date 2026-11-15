@@ -38,11 +38,12 @@ namespace Snapline
             content.Children.Add(title);
             AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture a region and hang it" : "Set a capture shortcut in the tray menu");
             if (!CaptureHotkeyRegistered && store.Settings.CaptureShortcut != "None")
-                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = 10, Foreground = Brush(Theme.Warn), Margin = new Thickness(0, 0, 0, 7) });
+                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = Theme.Size(10), Foreground = Brush(Theme.Warn), Margin = new Thickness(0, 0, 0, 7) });
             AddHelpRow(content, "Scissors button", "Copies only, does not hang");
             AddHelpRow(content, "Touch the top line", "Opens the line");
             AddHelpRow(content, "Slip under an image", "Add or edit its caption");
             AddHelpRow(content, "Ctrl + Alt + S", "Pin open / close");
+            AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Double-click a note", "Edit text and paper; right-click to copy or delete");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
@@ -71,7 +72,7 @@ namespace Snapline
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var label = Text(key, 12, Theme.Light); label.TextWrapping = TextWrapping.Wrap; label.Margin = new Thickness(0, 0, 8, 0);
-            var detail = new TextBlock { Text = action, FontSize = 12, Foreground = Brush(Theme.Mid), TextWrapping = TextWrapping.Wrap };
+            var detail = new TextBlock { Text = action, FontSize = Theme.Size(12), Foreground = Brush(Theme.Mid), TextWrapping = TextWrapping.Wrap };
             Grid.SetColumn(detail, 1); row.Children.Add(label); row.Children.Add(detail); content.Children.Add(row);
         }
         MenuItem Item(string text, Action action)
@@ -98,12 +99,12 @@ namespace Snapline
         }
         TextBlock Text(string text, double size, string color)
         {
-            return new TextBlock { Text = text, FontSize = size, Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
+            return new TextBlock { Text = text, FontSize = Theme.Size(size), Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
         }
         void Place(UIElement element, double x, double y) { Canvas.SetLeft(element, x); Canvas.SetTop(element, y); canvas.Children.Add(element); }
         Button Tool(string text, string tip, Action click)
         {
-            var button = new Button { Content = text, ToolTip = tip, Height = 28, MinWidth = 28, Padding = new Thickness(8, 2, 8, 2), Background = Brush(Theme.Alpha("CC", Theme.Panel)), Foreground = Brush(Theme.Text), BorderThickness = new Thickness(0), Cursor = Cursors.Hand, FontSize = 12, Focusable = false };
+            var button = new Button { Content = text, ToolTip = tip, Height = 28, MinWidth = 28, Padding = new Thickness(8, 2, 8, 2), Background = Brush(Theme.Alpha("CC", Theme.Panel)), Foreground = Brush(Theme.Text), BorderThickness = new Thickness(0), Cursor = Cursors.Hand, FontSize = Theme.Size(12), Focusable = false };
             AutomationProperties.SetName(button, tip);
             button.Click += delegate { click(); };
             return button;
@@ -115,7 +116,95 @@ namespace Snapline
         }
         int VisibleCardCount()
         {
-            return Math.Min(CardsPerPage(), Math.Max(0, Deck().Count - page * CardsPerPage()));
+            return Math.Min(CardsPerPage(), Deck().Count);
+        }
+        // The line shows up to CardsPerPage() cards starting at `first`; `focus` is the highlighted card.
+        sealed class LineCard { internal FrameworkElement Element; internal int Index; internal ScaleTransform Scale; internal UIElement Shade; }
+        readonly List<LineCard> lineCards = new List<LineCard>();
+        int first, focus, rollDelta;
+        double wheelRest;
+        DateTime rollingUntil;
+        const double SlotWidth = 218;
+        int LastFirst(int count) { return Math.Max(0, count - CardsPerPage()); }
+        // Wheel and swipe: move the line itself by whole cards. With everything in view they move the focus.
+        internal void Roll(int step)
+        {
+            int count = Deck().Count; if (count == 0) return;
+            if (count <= CardsPerPage()) { StepFocus(step); return; }
+            int next = Math.Max(0, Math.Min(LastFirst(count), first + step));
+            if (next == first) return;
+            rollDelta = next - first; first = next;
+            focus = Math.Max(first, Math.Min(first + CardsPerPage() - 1, focus));
+            lastInside = DateTime.Now; Render();
+        }
+        // Keys: move the focus by one card and keep it centred while the line holds more cards than fit.
+        internal void StepFocus(int step)
+        {
+            int count = Deck().Count; if (count == 0) return;
+            focus = Math.Max(0, Math.Min(count - 1, focus + step));
+            int next = count <= CardsPerPage() ? 0 : Math.Max(0, Math.Min(LastFirst(count), focus - CardsPerPage() / 2));
+            lastInside = DateTime.Now;
+            if (next != first) { rollDelta = next - first; first = next; Render(); }
+            else ApplyFocus(true);
+        }
+        void WheelBy(int delta)
+        {
+            wheelRest += delta;
+            while (Math.Abs(wheelRest) >= 120) { int direction = wheelRest > 0 ? 1 : -1; wheelRest -= 120 * direction; Roll(-direction); }
+        }
+        void ApplyFocus(bool animate)
+        {
+            foreach (var card in lineCards)
+            {
+                bool on = card.Index == focus;
+                // Cards stay opaque; the ones out of focus sit under a dark wash instead of turning see-through.
+                double scale = on ? 1.05 : 1, shade = on ? 0 : 1;
+                if (!animate) { card.Scale.ScaleX = card.Scale.ScaleY = scale; card.Shade.Opacity = shade; continue; }
+                var time = TimeSpan.FromMilliseconds(140);
+                card.Scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(scale, time));
+                card.Scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(scale, time));
+                card.Shade.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(shade, time));
+            }
+        }
+        // Gives a freshly hung card its focus scaling and, after a roll, slides it in from where it hung before.
+        void Dress(FrameworkElement card, int deckIndex, int rolled)
+        {
+            var scale = new ScaleTransform(1, 1, card.Width / 2, 0);
+            var group = new TransformGroup(); group.Children.Add(scale); group.Children.Add(card.RenderTransform);
+            card.RenderTransform = group; card.CacheMode = new BitmapCache(Math.Max(1, Dpi()) * 1.05);
+            var shade = new Border { Background = Brush(Theme.Alpha("66", Theme.Bg)), IsHitTestVisible = false, Opacity = 0, Tag = "FocusShade" };
+            ((Panel)card).Children.Add(shade);
+            lineCards.Add(new LineCard { Element = card, Index = deckIndex, Scale = scale, Shade = shade });
+            card.MouseEnter += delegate { if (DateTime.Now < rollingUntil || focus == deckIndex) return; focus = deckIndex; ApplyFocus(true); };
+            if (rolled == 0) return;
+            double left = Canvas.GetLeft(card), top = Canvas.GetTop(card), shift = rolled * SlotWidth;
+            double oldCenter = Math.Max(24, Math.Min(shelfWidth - 24, left + card.Width / 2 + shift));
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut }; var time = TimeSpan.FromMilliseconds(220);
+            card.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(left + shift, left, time) { EasingFunction = ease });
+            card.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(RopeY(oldCenter) + 15, top, time) { EasingFunction = ease });
+        }
+        bool lineKeys;
+        static readonly uint[] LineKeyCodes = { 0x25, 0x27, 0x0D, 0x1B, 0x2E };
+        // After the line is opened from the keyboard, arrows, Enter, Esc and Delete drive it until it closes.
+        void SetLineKeys(bool on)
+        {
+            if (on == lineKeys || handle == IntPtr.Zero) return;
+            lineKeys = on;
+            for (int i = 0; i < LineKeyCodes.Length; i++)
+                if (on) Native.RegisterHotKey(handle, 20 + i, 0, LineKeyCodes[i]); else Native.UnregisterHotKey(handle, 20 + i);
+        }
+        void LineKey(int id)
+        {
+            var deck = Deck();
+            object item = focus >= 0 && focus < deck.Count ? deck[focus] : null;
+            switch (id)
+            {
+                case 20: StepFocus(-1); break;
+                case 21: StepFocus(1); break;
+                case 22: if (item is Shot) Copy((Shot)item); else if (item is Memo) CopyNote((Memo)item); Collapse(true); break;
+                case 23: Collapse(true); break;
+                case 24: SetLineKeys(false); if (item is Shot) RemoveShot((Shot)item); else if (item is Memo) DeleteNote((Memo)item); break;
+            }
         }
         double HangingCenter(int index, int imageCount)
         {
@@ -157,13 +246,6 @@ namespace Snapline
             return RopeTop;
         }
 
-        void ChangePage(int step)
-        {
-            int lastPage = Math.Max(0, (Deck().Count - 1) / CardsPerPage());
-            int next = Math.Max(0, Math.Min(lastPage, page + step));
-            if (next == page) return;
-            page = next; lastInside = DateTime.Now; Render();
-        }
         internal void Render(bool force = false)
         {
             if (collapsing || (remarkEditor != null && !force)) { renderDeferred = true; return; }
@@ -181,7 +263,6 @@ namespace Snapline
                 Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.IndicatorWidth) / 2), 0);
                 return;
             }
-            page = Math.Min(page, Math.Max(0, (Deck().Count - 1) / CardsPerPage()));
             double left = 24, right = shelfWidth - 24;
             var nodes = RopeNodes();
             var geometry = new StreamGeometry();
@@ -212,23 +293,28 @@ namespace Snapline
             });
             Place(new Ellipse { Width = 5, Height = 5, Fill = Brush(Theme.Accent), IsHitTestVisible = false }, left - 2.5, RopeTop - 2.5);
             Place(new Ellipse { Width = 5, Height = 5, Fill = Brush(Theme.Accent), IsHitTestVisible = false }, right - 2.5, RopeTop - 2.5);
+            lineCards.Clear();
             int perPage = CardsPerPage();
             var deck = Deck();
-            int maxPage = Math.Max(0, (deck.Count - 1) / perPage);
-            page = Math.Min(page, maxPage);
-            var shown = deck.Skip(page * perPage).Take(perPage).ToArray();
+            focus = Math.Max(0, Math.Min(deck.Count - 1, focus));
+            first = Math.Max(0, Math.Min(LastFirst(deck.Count), first));
+            if (focus < first) first = focus;
+            if (focus >= first + perPage) first = focus - perPage + 1;
+            var shown = deck.Skip(first).Take(perPage).ToArray();
+            int rolled = rollDelta; rollDelta = 0;
             for (int i = 0; i < shown.Length; i++)
             {
                 double center = HangingCenter(i, shown.Length);
                 var memo = shown[i] as Memo;
                 if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, i);
                 else MakeCard((Shot)shown[i], center, RopeY(center) + 15, i);
+                Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], first + i, rolled);
             }
-            if (maxPage > 0)
-            {
-                Place(Tool("‹", "Previous page (or scroll)", delegate { ChangePage(-1); }), 34, 29);
-                Place(Tool("›", "Next page (or scroll)", delegate { ChangePage(1); }), shelfWidth - 62, 29);
-            }
+            if (rolled != 0) rollingUntil = DateTime.Now.AddMilliseconds(260);
+            ApplyFocus(false);
+            if (first > 0) Place(Tool("‹", first + " more to the left (scroll)", delegate { Roll(-1); }), 34, 29);
+            int hiddenRight = deck.Count - first - shown.Length;
+            if (hiddenRight > 0) Place(Tool("›", hiddenRight + " more to the right (scroll)", delegate { Roll(1); }), shelfWidth - 62, 29);
             double helpCenter = HangingCenter(shown.Length, shown.Length);
             MakeHelpCard(helpCenter, RopeY(helpCenter) + 15, shown.Length);
             UpdateToast();
@@ -269,11 +355,11 @@ namespace Snapline
             subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4, 0, 0);
             content.Children.Add(subtitle);
             var capture = Tool("✂ Capture (copy only)", "Copies only; use the capture shortcut to hang automatically", StartCapture);
-            capture.FontSize = 11; capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
+            capture.FontSize = Theme.Size(11); capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
             capture.Background = Brush(Theme.Inset); capture.Foreground = Brush(Theme.Text);
             capture.ToolTip = null; content.Children.Add(capture);
             var addNote = Tool("＋ Note", "New note", NewNote);
-            addNote.FontSize = 12; addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
+            addNote.FontSize = Theme.Size(12); addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
             addNote.Background = Brush(Theme.Accent); addNote.Foreground = Brush(Theme.Bg);
             System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
             content.Children.Add(addNote);
@@ -349,7 +435,7 @@ namespace Snapline
             content.Children.Add(new Border { Child = preview, Background = Brush(Theme.Panel), CornerRadius = Theme.Radius(4), ClipToBounds = true });
             if (remarkBudget > 0)
             {
-                var remarkText = new TextBlock { Text = shot.Remark, FontSize = 13, LineHeight = 20, TextWrapping = TextWrapping.Wrap,
+                var remarkText = new TextBlock { Text = shot.Remark, FontSize = Theme.Size(13), LineHeight = 20, TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush(Theme.Light) };
                 AutomationProperties.SetAutomationId(remarkText, "PreviewRemark");
                 var scroll = new ScrollViewer { Content = remarkText, MaxHeight = remarkBudget, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -358,7 +444,7 @@ namespace Snapline
                 content.Children.Add(new Border { Child = scroll, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 9, 0, 0),
                     CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1) });
             }
-            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to open · Drag out" + (remarkBudget > 0 ? " · Scroll for long captions" : ""), FontSize = 11,
+            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to open · Drag out" + (remarkBudget > 0 ? " · Scroll for long captions" : ""), FontSize = Theme.Size(11),
                 Foreground = Brush(Theme.Mid), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
             var tip = new ToolTip
             {
@@ -439,7 +525,7 @@ namespace Snapline
             AddHangingPeg(grid);
             var remove = new Button
             {
-                Content = "×", Width = 19, Height = 19, FontSize = 13,
+                Content = "×", Width = 19, Height = 19, FontSize = Theme.Size(13),
                 Background = Brush(Theme.Alpha("E6", Theme.Bg)), Foreground = Brush(Theme.Light), BorderThickness = new Thickness(0),
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 3, 3, 0), Focusable = false, ToolTip = "Remove saved copy",

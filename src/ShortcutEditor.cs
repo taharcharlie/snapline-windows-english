@@ -44,11 +44,11 @@ namespace Snapline
             heading.MouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e) { if (e.ClickCount == 1) DragMove(); };
             header.Children.Add(heading);
             var close = MemoTheme.Button("×", "Cancel shortcut setup");
-            close.Width = 30; close.Height = 30; close.FontSize = 20; close.Padding = new Thickness(0);
+            close.Width = 30; close.Height = 30; close.FontSize = Theme.Size(20); close.Padding = new Thickness(0);
             close.Foreground = MemoTheme.Brush(Theme.Mid); close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top;
             close.Click += delegate { Close(); }; header.Children.Add(close); content.Children.Add(header);
             var description = new TextBlock { Text = "Click the box below, then press the shortcut you want.",
-                FontSize = 12, Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 0, 0, 13) };
+                FontSize = Theme.Size(12), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 0, 0, 13) };
             Grid.SetRow(description, 1); content.Children.Add(description);
             input = new TextBox { IsReadOnly = true, Text = current == null ? "Click here, then press keys" : current.Label,
                 FontSize = current == null ? 16 : 24, FontFamily = Theme.Font,
@@ -64,8 +64,8 @@ namespace Snapline
             Grid.SetRow(keyPanel, 2); content.Children.Add(keyPanel);
             var guidance = new StackPanel { Margin = new Thickness(0, 12, 0, 12) };
             guidance.Children.Add(new TextBlock { Text = "Ctrl, Shift, Alt + letter / digit / symbol / function key",
-                FontSize = 10.5, Foreground = MemoTheme.Brush(Theme.Mid) });
-            status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9, 0, 0) };
+                FontSize = Theme.Size(10.5), Foreground = MemoTheme.Brush(Theme.Mid) });
+            status = new TextBlock { FontSize = Theme.Size(11), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9, 0, 0) };
             System.Windows.Automation.AutomationProperties.SetAutomationId(status, "ShortcutStatus");
             guidance.Children.Add(status); Grid.SetRow(guidance, 3); content.Children.Add(guidance);
             var footer = new Grid();
@@ -93,7 +93,7 @@ namespace Snapline
             if (ShortcutSpec.IsModifier(key))
             {
                 candidate = null;
-                input.FontSize = 23; input.Text = ShortcutSpec.ModifierLabel(modifiers) + " + …";
+                input.FontSize = Theme.Size(23); input.Text = ShortcutSpec.ModifierLabel(modifiers) + " + …";
                 input.Select(0, 0);
                 status.Text = "Press another key; if nothing shows, try a different combination.";
                 status.Foreground = MemoTheme.Brush(Theme.Mid); save.IsEnabled = false; return;
@@ -104,7 +104,7 @@ namespace Snapline
         {
             string error = ShortcutSpec.Validate(modifiers, key);
             candidate = error == null ? new ShortcutSpec(modifiers, key) : null;
-            input.FontSize = 24; input.Text = new ShortcutSpec(modifiers, key).Label;
+            input.FontSize = Theme.Size(24); input.Text = new ShortcutSpec(modifiers, key).Label;
             input.Select(0, 0);
             if (error == null) UpdateCandidate();
             else { status.Text = error; status.Foreground = MemoTheme.Brush(Theme.Warn); save.IsEnabled = false; }
