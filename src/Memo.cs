@@ -362,7 +362,7 @@ namespace Snapline
             var menu = new ContextMenu(); menu.Items.Add(Item("Edit note", delegate { EditNote(note, false); })); menu.Items.Add(Item("Copy text", delegate { CopyNote(note); }));
             menu.Items.Add(Item(note.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(note); }));
             menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note", delegate { DeleteNote(note); }));
-            menu.Opened += delegate { CloseNotePreview(); }; grid.ContextMenu = menu;
+            menu.Opened += delegate { CloseNotePreview(); dialogOpen = true; }; menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; }; grid.ContextMenu = menu;
             grid.ToolTip = NotePopup(note, grid); ToolTipService.SetInitialShowDelay(grid, 280); ToolTipService.SetBetweenShowDelay(grid, 100); ToolTipService.SetShowDuration(grid, 60000);
             RegisterHoverPreview(grid);
             var breeze = new DoubleAnimation(lean - 0.45, lean + 0.45, TimeSpan.FromSeconds(4.4 + index * 0.2)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } };

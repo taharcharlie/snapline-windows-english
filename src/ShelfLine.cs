@@ -49,7 +49,7 @@ namespace Snapline
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
-            AddHelpRow(content, "Click / double-click", "Copy image / open it");
+            AddHelpRow(content, "Click / double-click a card", "Copy it / open it");
             AddHelpRow(content, "Drop a file, link or text here", "Hangs a reference card, or a note");
             AddHelpRow(content, "Drag along the line", "Reorder the cards");
             AddHelpRow(content, "Pull a card down", "Drop it in an app, or on this card to delete");
@@ -194,12 +194,14 @@ namespace Snapline
             card.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(RopeY(oldCenter) + 15, top, time) { EasingFunction = ease });
         }
         bool lineKeys;
+        IntPtr lineKeysOwner;
         static readonly uint[] LineKeyCodes = { 0x25, 0x27, 0x0D, 0x1B, 0x2E, 0x4B };
         // After the line is opened from the keyboard, arrows, Enter, Esc and Delete drive it until it closes.
         void SetLineKeys(bool on)
         {
             if (on == lineKeys || handle == IntPtr.Zero) return;
             lineKeys = on;
+            if (on) lineKeysOwner = Native.GetForegroundWindow();
             for (int i = 0; i < LineKeyCodes.Length; i++)
                 if (on) Native.RegisterHotKey(handle, 20 + i, i < 2 ? 0u : 0x4000u, LineKeyCodes[i]); else Native.UnregisterHotKey(handle, 20 + i);
             // 1 to 9 grab the card with that number on its peg.

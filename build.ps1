@@ -6,7 +6,7 @@ if (!(Test-Path -LiteralPath (Join-Path $framework 'csc.exe'))) {
     $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319'
 }
 $csc = Join-Path $framework 'csc.exe'
-if (!(Test-Path -LiteralPath $csc)) { throw '需要 Windows 自带的 .NET Framework 4.8。' }
+if (!(Test-Path -LiteralPath $csc)) { throw 'The .NET Framework 4.8 that ships with Windows is required.' }
 $dist = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $projectRoot 'dist' }
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 # Original icon: a mint-colored screenshot card clipped to a charcoal line.
@@ -44,7 +44,7 @@ $arguments = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/utf8
     ('/win32icon:' + $iconFile)
 ) + $references + @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName })
 & $csc @arguments
-if ($LASTEXITCODE -ne 0) { throw '编译失败。' }
+if ($LASTEXITCODE -ne 0) { throw 'The build failed.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'Snapline.exe.config') -Destination $dist -Force
 foreach ($name in @('使用说明.txt','LICENSE.txt','THIRD_PARTY_NOTICES.md')) {
     if (Test-Path -LiteralPath (Join-Path $projectRoot $name)) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $dist -Force }

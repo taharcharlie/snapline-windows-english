@@ -101,9 +101,61 @@ namespace Snapline
             menu.Items.Add("Help", null, delegate { About(); });
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("Quit", null, delegate { Close(); });
+            DressTrayMenu(menu);
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { ToggleFromTray(); };
             tray.Visible = true;
+        }
+        static Drawing.Color TrayColour(string hex) { return Drawing.ColorTranslator.FromHtml(hex); }
+        sealed class TrayColours : Forms.ProfessionalColorTable
+        {
+            public override Drawing.Color ToolStripDropDownBackground { get { return TrayColour(Theme.Panel); } }
+            public override Drawing.Color ImageMarginGradientBegin { get { return TrayColour(Theme.Panel); } }
+            public override Drawing.Color ImageMarginGradientMiddle { get { return TrayColour(Theme.Panel); } }
+            public override Drawing.Color ImageMarginGradientEnd { get { return TrayColour(Theme.Panel); } }
+            public override Drawing.Color MenuBorder { get { return TrayColour(Theme.Rule); } }
+            public override Drawing.Color MenuItemBorder { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color MenuItemSelected { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color MenuItemSelectedGradientBegin { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color MenuItemSelectedGradientEnd { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color MenuItemPressedGradientBegin { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color MenuItemPressedGradientEnd { get { return TrayColour(Theme.Inset); } }
+            public override Drawing.Color SeparatorDark { get { return TrayColour(Theme.Rule); } }
+            public override Drawing.Color SeparatorLight { get { return TrayColour(Theme.Rule); } }
+        }
+        sealed class TrayRenderer : Forms.ToolStripProfessionalRenderer
+        {
+            internal TrayRenderer() : base(new TrayColours()) { RoundedEdges = false; }
+            protected override void OnRenderItemText(Forms.ToolStripItemTextRenderEventArgs e)
+            {
+                e.TextColor = TrayColour(!e.Item.Enabled ? Theme.Dim : e.Item.Selected ? Theme.White : Theme.Light);
+                base.OnRenderItemText(e);
+            }
+            protected override void OnRenderArrow(Forms.ToolStripArrowRenderEventArgs e) { e.ArrowColor = TrayColour(Theme.Mid); base.OnRenderArrow(e); }
+            // A small accent square marks a ticked item.
+            protected override void OnRenderItemCheck(Forms.ToolStripItemImageRenderEventArgs e)
+            {
+                var box = e.ImageRectangle;
+                using (var brush = new Drawing.SolidBrush(TrayColour(Theme.Accent)))
+                    e.Graphics.FillRectangle(brush, box.X + box.Width / 2 - 4, box.Y + box.Height / 2 - 4, 8, 8);
+            }
+        }
+        void DressTrayMenu(Forms.ContextMenuStrip menu)
+        {
+            try
+            {
+                var renderer = new TrayRenderer();
+                var font = new Drawing.Font("Barlow Condensed", 11.5f);
+                if (font.Name != "Barlow Condensed") { font.Dispose(); font = new Drawing.Font("Segoe UI", 9.5f); }
+                Action<Forms.ToolStripDropDown> dress = null;
+                dress = delegate(Forms.ToolStripDropDown strip)
+                {
+                    strip.Renderer = renderer; strip.Font = font; strip.BackColor = TrayColour(Theme.Panel); strip.ForeColor = TrayColour(Theme.Light);
+                    foreach (var item in strip.Items.OfType<Forms.ToolStripMenuItem>()) if (item.HasDropDownItems) dress(item.DropDown);
+                };
+                dress(menu);
+            }
+            catch (Exception ex) { store.Log("Tray menu style", ex); } // The plain menu still works.
         }
         void SetAutoClear(int days)
         {
@@ -129,7 +181,12 @@ namespace Snapline
             dialogOpen = true;
             try
             {
-                Forms.MessageBox.Show("Snapline 0.5.8\n\n" + CaptureShortcutLabel + ": capture a region (when the shortcut is available).\n'Tips' card right of the images: hover for help; its button captures and copies only.\nWin + Shift + S and other screenshot tools are not collected.\nCtrl + Alt + S: open / close; stays open once opened.\nDouble-click the tray icon: open temporarily, auto-hides when you leave.\nTray 'Keep visible': tick to stay open, untick to auto-hide again.\nTray 'Start at login': off until you turn it on.\nTouch the line at the top centre: opens the line.\n'Add caption' or the slip under an image: note its purpose; Enter saves, Esc cancels.\nClick an image: copy. Double-click: open.\nDrag out: copy as a file. Shift-drag to a folder: move.\nLong-press an image: edit in Paint. Right-click: more actions.\n\nCaptures made with the capture shortcut are added automatically. Other screenshots and copied images are not.\nUp to 60 images are kept; the oldest saved copies are cleared beyond that.\nRuns entirely on this PC: no network, no uploads, no changes to system screenshot settings.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
+                Forms.MessageBox.Show("Snapline, Ashes edition (based on 0.5.8)\n\n" +
+                    "OPEN\nTouch the line at the top centre, or press Ctrl + Alt + S (stays open; arrows roll, Enter or 1 to 9 copies, Esc closes).\nDouble-click the tray icon: open until you leave.\n\n" +
+                    "HANG\n" + CaptureShortcutLabel + ": capture a region and hang it (when the shortcut is available).\nCtrl + Alt + D: hang what is on the clipboard.\nDrop a file, folder, link or text on a card. Files and folders hang as references: the original is never moved or deleted.\n'+ Note' on the Tips card: a quick note.\n\n" +
+                    "USE\nClick a card: copy. Double-click: open or edit.\nDrag along the line: reorder. Pull a card down: drop it into an app, or on the Tips card to delete.\nClick a peg: delete, with Undo for a few seconds.\nRight-click: more, including Keep (yellow peg: never cleared).\n'Add caption' under an image: note what it is for.\n\n" +
+                    "TRAY\nLine tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
+                    "Win + Shift + S and other screenshot tools are not collected. Up to 60 screenshots and 60 reference cards are held; the oldest unkept ones make room.\nRuns entirely on this PC: no network, no uploads.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
             }
             finally { dialogOpen = false; }
         }

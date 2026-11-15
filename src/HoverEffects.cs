@@ -113,6 +113,9 @@ namespace Snapline
         {
             var motion = hangingMotions.Find(x => Object.ReferenceEquals(x.Swing, swing));
             if (motion == null) return;
+            // Calm mode: settle at the middle of the sway instead of swaying for ever.
+            if (Theme.Calm && animation.RepeatBehavior == RepeatBehavior.Forever && animation.From.HasValue && animation.To.HasValue)
+                animation = new DoubleAnimation((animation.From.Value + animation.To.Value) / 2, TimeSpan.FromMilliseconds(180));
             var timeline = animation.Clone();
             if (!timeline.From.HasValue) timeline.From = swing.Angle;
             var previous = motion.Clock;

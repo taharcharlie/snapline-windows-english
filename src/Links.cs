@@ -81,7 +81,7 @@ namespace Snapline
             if (days <= 0) return old;
             DateTime cutoff = DateTime.Now.AddDays(-days);
             old.AddRange(Items.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
-            old.AddRange(Notes.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
+            old.AddRange(Notes.Where(x => !x.Kept && x.Created.Year > 2000 && (x.Updated > x.Created ? x.Updated : x.Created) < cutoff).Cast<object>());
             old.AddRange(Links.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
             return old;
         }
@@ -381,7 +381,7 @@ namespace Snapline
         }
         internal void HangClipboard()
         {
-            if (dialogOpen || dragging || reorderSlots != null || memoEditor != null || remarkEditor != null || editingShortcut) return;
+            if (dialogOpen || dragging || reorderSlots != null || memoEditor != null || remarkEditor != null || editingShortcut || capturePending || shuttingDown) return;
             try
             {
                 IDataObject data = null;
@@ -394,7 +394,9 @@ namespace Snapline
                 Reveal(); keepUntil = DateTime.Now.AddSeconds(4);
                 if (data == null) { Notify("The clipboard is busy. Try again."); return; }
                 if (data.GetDataPresent(DataFormats.FileDrop)) { HangDropped(data); return; }
-                if (Clipboard.ContainsImage())
+                string words = null;
+                try { words = data.GetData(DataFormats.UnicodeText) as string; } catch { }
+                if (String.IsNullOrWhiteSpace(words) && Clipboard.ContainsImage())
                 {
                     var image = Clipboard.GetImage();
                     if (image != null)
@@ -409,7 +411,8 @@ namespace Snapline
                 string text = data.GetData(DataFormats.UnicodeText) as string;
                 if (String.IsNullOrWhiteSpace(text)) { Notify("Nothing on the clipboard to hang."); return; }
                 text = text.Trim();
-                if (text.Length > Store.MaxNoteText) text = text.Substring(0, Store.MaxNoteText);
+                bool cut = text.Length > Store.MaxNoteText;
+                if (cut) text = text.Substring(0, Store.MaxNoteText);
                 // A note that was just copied from the line is not hung a second time.
                 var same = store.Notes.FirstOrDefault(x => String.Equals((x.Text ?? "").Trim(), text, StringComparison.Ordinal));
                 if (same != null)
@@ -419,6 +422,7 @@ namespace Snapline
                     Flash(same, "Already here"); return;
                 }
                 HangDropped(data);
+                if (cut) Notify("Only the first " + Store.MaxNoteText + " characters were hung.");
             }
             catch (Exception ex) { store.Log("Hang clipboard", ex); Notify("Could not hang the clipboard."); }
         }

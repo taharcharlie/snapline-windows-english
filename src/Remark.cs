@@ -76,8 +76,8 @@ namespace Snapline
             var close = MemoTheme.Button("×", "Cancel caption editing"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = Theme.Size(19);
             close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += delegate { Close(); }; heading.Children.Add(close); content.Children.Add(heading);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 5) };
-            writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("66", Theme.White)), CornerRadius = Theme.Radius(6),
-                BorderBrush = MemoTheme.Brush(Theme.Alpha("70", Theme.Mid)), BorderThickness = new Thickness(1) });
+            writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Inset), CornerRadius = Theme.Radius(6),
+                BorderBrush = MemoTheme.Brush(Theme.Rule), BorderThickness = new Thickness(1) });
             Input = new TextBox { Text = shot.Remark ?? "", MaxLength = Store.MaxRemarkText, AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Background = Brushes.Transparent,

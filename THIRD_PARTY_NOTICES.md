@@ -1,17 +1,19 @@
-﻿# 来源与致谢
+﻿# Sources and acknowledgements
 
-Snapline / 截图晾台的交互设计受到 Tendedero 的启发，尤其是把截图挂在屏幕顶部的晾衣绳上，以及悬停展开、单击复制、双击查看、长按编辑和拖拽分享的操作思路。
+This repository is an English fork of [TE1233/snapline-windows](https://github.com/TE1233/snapline-windows), released under the MIT License. The notice below is translated from that project.
 
-- 原项目：[Tendedero](https://github.com/alejandrobujan/tendedero)
-- 原作者：[Alejandro Buján](https://github.com/alejandrobujan)
-- 原项目源码许可证：MIT
-- 原项目版权声明：Copyright (c) 2026 Alejandro Buján
-- 参考版本：ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69
-- 固定版本许可证：[Tendedero LICENSE](https://github.com/alejandrobujan/tendedero/blob/ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69/LICENSE)
-- 固定版本项目说明：[Tendedero README](https://github.com/alejandrobujan/tendedero/blob/ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69/README.md)
+The interaction design of Snapline is inspired by Tendedero: hanging screenshots on a clothesline at the top of the screen, and the ideas of opening on hover, click to copy, double-click to view, long-press to edit and drag to share.
 
-原项目使用 Swift、AppKit 和 SwiftUI 实现 macOS 应用。本仓库使用 C#、WPF 和 .NET Framework 4.8 实现 Windows 应用，并增加 Ctrl+B 专属截图收集、天空蓝弯绳、悬挂操作提示、图片放大预览及三色便签等功能。
+- Original project: [Tendedero](https://github.com/alejandrobujan/tendedero)
+- Original author: [Alejandro Buján](https://github.com/alejandrobujan)
+- Original project source license: MIT
+- Original project copyright notice: Copyright (c) 2026 Alejandro Buján
+- Reference version: ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69
+- License at that version: [Tendedero LICENSE](https://github.com/alejandrobujan/tendedero/blob/ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69/LICENSE)
+- Project description at that version: [Tendedero README](https://github.com/alejandrobujan/tendedero/blob/ed0618a67cc59e0a8621b97bb5e32ab9af3b0b69/README.md)
 
-原项目许可证对 Tendedero 的名称、图标和 docs 目录图片另有使用限制。本项目发布使用 Snapline / 截图晾台名称、自行绘制的图标和自行生成的示例预览。
+The original project is a macOS application written with Swift, AppKit and SwiftUI. This repository is a Windows application written with C#, WPF and .NET Framework 4.8, with its own additions such as collection through a dedicated capture shortcut, the curved line, the hanging tips card, enlarged image previews and notes.
 
-本仓库的 Windows 实现采用 MIT 许可证，见 [LICENSE.txt](LICENSE.txt)。
+The original project's license places separate restrictions on the Tendedero name, its icon and the images in its docs folder. This project is published under the name Snapline, with an icon drawn for it and its own example previews.
+
+The Windows implementation in this repository is under the MIT License, see [LICENSE.txt](LICENSE.txt).

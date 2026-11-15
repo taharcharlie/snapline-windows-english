@@ -267,6 +267,8 @@ namespace Snapline
             if (shuttingDown) return;
             // Typing into an editor or a dialog must never be taken over by the line keys.
             if (lineKeys && (dialogOpen || memoEditor != null || remarkEditor != null || editingShortcut)) SetLineKeys(false);
+            // The line is not open, or the user switched to another window: plain keys belong to that app again.
+            if (lineKeys && (!expanded || Native.GetForegroundWindow() != lineKeysOwner)) SetLineKeys(false);
             if (!dragging && reorderSlots == null) ProcessPending();
             // Checked before the early exits below, so an open tooltip cannot keep a removed card recoverable forever.
             if (undoItem != null && !dragging && DateTime.Now > undoUntil) { FinishUndo(); UpdateToast(); }
@@ -357,7 +359,7 @@ namespace Snapline
         void Toggle()
         {
             if (expanded && !collapsing) Collapse(true);
-            else { pinned = true; Reveal(); SetLineKeys(true); }
+            else { pinned = true; Reveal(); if (expanded && !collapsing) SetLineKeys(true); }
         }
         internal void ToggleFromTray()
         {

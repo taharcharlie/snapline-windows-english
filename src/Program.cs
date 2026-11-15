@@ -44,6 +44,7 @@ namespace Snapline
             string root = Option(args, "--data-dir") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Snapline");
             try
             {
+                Theme.ForceLively = args.Any(x => x.EndsWith("-test", StringComparison.Ordinal));
                 if (args.Contains("--self-test")) { SelfTest(root); return 0; }
                 if (args.Contains("--integration-test")) return Integration.Run(root);
                 if (args.Contains("--memo-test")) return MemoTests.Run(root);
@@ -58,12 +59,15 @@ namespace Snapline
                     if (!fresh) { if (!args.Contains("--startup")) Native.PostMessage(new IntPtr(0xffff), Native.ShowMessage, IntPtr.Zero, IntPtr.Zero); return 0; }
                     var store = new Store(root);
                     var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+                    try { app.Resources.MergedDictionaries.Add(Theme.MenuResources()); }
+                    catch (Exception ex) { store.Log("Menu style", ex); } // Plain menus still work.
                     app.DispatcherUnhandledException += delegate(object sender, DispatcherUnhandledExceptionEventArgs e)
                     {
                         store.Log("UI error", e.Exception);
                         e.Handled = true;
                     };
                     bool demo = args.Contains("--demo");
+                    Theme.ForceCalm = args.Contains("--calm"); // For testing the on-battery behaviour on mains.
                     if (demo && store.Items.Count == 0)
                     {
                         store.Add(Demo("IDEAS", "Hang up an idea", "#315B75"), "Sample · Ideas");
