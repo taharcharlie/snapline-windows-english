@@ -60,44 +60,44 @@ namespace Snapline
             ShowInTaskbar = false; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true;
             WindowStartupLocation = WindowStartupLocation.Manual;
-            FontFamily = new FontFamily("Microsoft YaHei UI"); UseLayoutRounding = true;
+            FontFamily = Theme.Font; UseLayoutRounding = true;
             var outer = new Grid { Margin = new Thickness(10) };
-            outer.Children.Add(new Border { CornerRadius = new CornerRadius(11), Background = MemoTheme.Paper("Butter"),
-                BorderBrush = MemoTheme.Brush("#E9D799"), BorderThickness = new Thickness(1),
-                Effect = new DropShadowEffect { Color = MemoTheme.Hex("#354155"), BlurRadius = 15, ShadowDepth = 4, Opacity = 0.16 } });
+            outer.Children.Add(new Border { CornerRadius = Theme.Radius(11), Background = MemoTheme.Paper("Butter"),
+                BorderBrush = MemoTheme.Brush(Theme.Rule), BorderThickness = new Thickness(1),
+                Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), BlurRadius = 15, ShadowDepth = 4, Opacity = 0.16 } });
             var content = new Grid { Margin = new Thickness(18, 13, 18, 10) };
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var heading = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-            var title = MemoTheme.Text("What is this screenshot for?", 16, "#625435");
+            var title = MemoTheme.Text("What is this screenshot for?", 16, Theme.Light);
             title.FontWeight = FontWeights.SemiBold; title.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(title);
             var close = MemoTheme.Button("×", "Cancel caption editing"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = 19;
             close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += delegate { Close(); }; heading.Children.Add(close); content.Children.Add(heading);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 5) };
-            writing.Children.Add(new Border { Background = MemoTheme.Brush("#66FFFFFF"), CornerRadius = new CornerRadius(6),
-                BorderBrush = MemoTheme.Brush("#70D6C695"), BorderThickness = new Thickness(1) });
+            writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("66", Theme.White)), CornerRadius = Theme.Radius(6),
+                BorderBrush = MemoTheme.Brush(Theme.Alpha("70", Theme.Mid)), BorderThickness = new Thickness(1) });
             Input = new TextBox { Text = shot.Remark ?? "", MaxLength = Store.MaxRemarkText, AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0), Padding = new Thickness(10, 8, 10, 8), FontSize = 13,
-                Foreground = Brushes.Black, CaretBrush = MemoTheme.Brush("#AC8D3F") };
+                Foreground = MemoTheme.Brush(Theme.Light), CaretBrush = MemoTheme.Brush(Theme.Accent) };
             AutomationProperties.SetAutomationId(Input, "RemarkInput"); AutomationProperties.SetName(Input, "Screenshot caption");
             TextBlock.SetLineHeight(Input, 21);
             writing.Children.Add(Input);
-            var placeholder = MemoTheme.Text("e.g. Use this layout for the Friday proposal.", 12, "#AB9C78");
+            var placeholder = MemoTheme.Text("e.g. Use this layout for the Friday proposal.", 12, Theme.Mid);
             placeholder.TextWrapping = TextWrapping.Wrap; placeholder.Margin = new Thickness(11, 10, 8, 0); placeholder.IsHitTestVisible = false;
             placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; writing.Children.Add(placeholder);
-            Input.TextChanged += delegate { placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; status.Text = "Enter saves · Shift+Enter new line · Esc cancels"; status.Foreground = MemoTheme.Brush("#9B8C65"); ResumeEditing(); };
+            Input.TextChanged += delegate { placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; status.Text = "Enter saves · Shift+Enter new line · Esc cancels"; status.Foreground = MemoTheme.Brush(Theme.Text); ResumeEditing(); };
             Grid.SetRow(writing, 1); content.Children.Add(writing);
-            status = MemoTheme.Text("Enter saves · Shift+Enter new line · Esc cancels", 10, "#9B8C65");
+            status = MemoTheme.Text("Enter saves · Shift+Enter new line · Esc cancels", 10, Theme.Text);
             status.TextWrapping = TextWrapping.Wrap; status.Margin = new Thickness(0, 0, 0, 5); Grid.SetRow(status, 2); content.Children.Add(status);
             var footer = new Grid();
-            var hint = MemoTheme.Text("The caption stays here; the image copies unchanged", 10, "#A29576"); hint.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(hint);
+            var hint = MemoTheme.Text("The caption stays here; the image copies unchanged", 10, Theme.Mid); hint.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(hint);
             var save = MemoTheme.Button("Save", "Save caption"); save.Width = 64; save.HorizontalAlignment = HorizontalAlignment.Right;
-            save.Background = MemoTheme.Brush("#FFFDF8"); save.Foreground = MemoTheme.Brush("#756341");
-            save.BorderBrush = MemoTheme.Brush("#70C7B17A"); save.BorderThickness = new Thickness(1);
+            save.Background = MemoTheme.Brush(Theme.Panel); save.Foreground = MemoTheme.Brush(Theme.Light);
+            save.BorderBrush = MemoTheme.Brush(Theme.Alpha("70", Theme.Mid)); save.BorderThickness = new Thickness(1);
             AutomationProperties.SetAutomationId(save, "RemarkSave"); save.Click += delegate { SaveAndClose(); }; footer.Children.Add(save);
             Grid.SetRow(footer, 3); content.Children.Add(footer); outer.Children.Add(content); Content = outer;
             autoClose.Tick += delegate { ObservePointer(PointerInRemarkArea(), Clock()); };
@@ -168,7 +168,7 @@ namespace Snapline
             {
                 store.Log("Save screenshot remark", ex);
                 autoCloseSuspended = true;
-                status.Text = "Could not save. Your text is kept; try again shortly."; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
+                status.Text = "Could not save. Your text is kept; try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); return false;
             }
         }
         internal void SaveAndClose() { if (TrySave()) Close(); }
@@ -194,14 +194,14 @@ namespace Snapline
             {
                 Width = width, Height = RemarkStripHeight, Padding = new Thickness(left, 3, right, 3),
                 VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, imageHeight, 0, 0),
-                Focusable = false, Cursor = Cursors.Hand, Foreground = Brushes.Black,
-                Background = new LinearGradientBrush(MemoTheme.Hex("#EFF8FE"), MemoTheme.Hex("#E0F0FB"), 90),
-                BorderBrush = MemoTheme.Brush("#C6E2F5"), BorderThickness = new Thickness(1, 0, 1, 1)
+                Focusable = false, Cursor = Cursors.Hand, Foreground = MemoTheme.Brush(Theme.Text),
+                Background = new LinearGradientBrush(MemoTheme.Hex(Theme.Panel), MemoTheme.Hex(Theme.Panel), 90),
+                BorderBrush = MemoTheme.Brush(Theme.Panel), BorderThickness = new Thickness(1, 0, 1, 1)
             };
             AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");
             var paper = new FrameworkElementFactory(typeof(Grid));
             var frame = new FrameworkElementFactory(typeof(Border));
-            frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(0, 0, 5, 5));
+            frame.SetValue(Border.CornerRadiusProperty, Theme.Radius(0, 0, 5, 5));
             frame.SetBinding(Border.BackgroundProperty, new Binding("Background") { RelativeSource = RelativeSource.TemplatedParent });
             frame.SetBinding(Border.BorderBrushProperty, new Binding("BorderBrush") { RelativeSource = RelativeSource.TemplatedParent });
             frame.SetBinding(Border.BorderThicknessProperty, new Binding("BorderThickness") { RelativeSource = RelativeSource.TemplatedParent });
@@ -209,20 +209,20 @@ namespace Snapline
             var seam = new FrameworkElementFactory(typeof(System.Windows.Shapes.Line));
             seam.SetValue(System.Windows.Shapes.Line.X1Property, 1.0); seam.SetValue(System.Windows.Shapes.Line.X2Property, width - 1);
             seam.SetValue(System.Windows.Shapes.Line.Y1Property, 0.7); seam.SetValue(System.Windows.Shapes.Line.Y2Property, 0.7);
-            seam.SetValue(System.Windows.Shapes.Shape.StrokeProperty, MemoTheme.Brush("#9DBED3"));
+            seam.SetValue(System.Windows.Shapes.Shape.StrokeProperty, MemoTheme.Brush(Theme.Rule));
             seam.SetValue(System.Windows.Shapes.Shape.StrokeThicknessProperty, 0.7);
             seam.SetValue(System.Windows.Shapes.Shape.StrokeDashArrayProperty, new DoubleCollection(new[] { 2.0, 2.0 }));
             seam.SetValue(UIElement.IsHitTestVisibleProperty, false); paper.AppendChild(seam);
             var rule = new FrameworkElementFactory(typeof(Border));
             rule.SetValue(FrameworkElement.HeightProperty, 0.7);
-            rule.SetValue(Border.BackgroundProperty, MemoTheme.Brush("#248BA8BD"));
+            rule.SetValue(Border.BackgroundProperty, MemoTheme.Brush(Theme.Alpha("24", Theme.Mid)));
             rule.SetValue(FrameworkElement.MarginProperty, new Thickness(left, 0, right, 4));
             rule.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Bottom);
             rule.SetValue(UIElement.IsHitTestVisibleProperty, false); paper.AppendChild(rule);
             var fold = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
             fold.SetValue(System.Windows.Shapes.Path.DataProperty, Geometry.Parse("M 0,10 L 10,0 L 10,8 Q 10,10 8,10 Z"));
-            fold.SetValue(System.Windows.Shapes.Shape.FillProperty, new LinearGradientBrush(MemoTheme.Hex("#CADFED"), MemoTheme.Hex("#F9FDFF"), 45));
-            fold.SetValue(System.Windows.Shapes.Shape.StrokeProperty, MemoTheme.Brush("#BBD5E5"));
+            fold.SetValue(System.Windows.Shapes.Shape.FillProperty, new LinearGradientBrush(MemoTheme.Hex(Theme.Panel), MemoTheme.Hex(Theme.Panel), 45));
+            fold.SetValue(System.Windows.Shapes.Shape.StrokeProperty, MemoTheme.Brush(Theme.Rule));
             fold.SetValue(System.Windows.Shapes.Shape.StrokeThicknessProperty, 0.5);
             fold.SetValue(FrameworkElement.WidthProperty, 10.0); fold.SetValue(FrameworkElement.HeightProperty, 10.0);
             fold.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Right);
@@ -253,14 +253,14 @@ namespace Snapline
                 marker = new System.Windows.Shapes.Path
                 {
                     Width = lead, Height = lead, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left,
-                    VerticalAlignment = VerticalAlignment.Center, Stroke = MemoTheme.Brush("#6B97B2"), StrokeThickness = 1,
+                    VerticalAlignment = VerticalAlignment.Center, Stroke = MemoTheme.Brush(Theme.Mid), StrokeThickness = 1,
                     StrokeLineJoin = PenLineJoin.Round, Data = Geometry.Parse("M 1,11 L 2,7 L 9,0 L 12,3 L 5,10 Z M 2,7 L 5,10 M 8,1 L 11,4")
                 };
             else
-                marker = new Border { Width = lead, Height = 12, CornerRadius = new CornerRadius(1.5),
-                    Background = MemoTheme.Brush("#72C7FA"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+                marker = new Border { Width = lead, Height = 12, CornerRadius = Theme.Radius(1.5),
+                    Background = MemoTheme.Brush(Theme.Accent), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             marker.IsHitTestVisible = false; content.Children.Add(marker);
-            var label = new RemarkText { Text = summary, FontSize = 12, FontFamily = new FontFamily("Microsoft YaHei UI"), Foreground = Brushes.Black };
+            var label = new RemarkText { Text = summary, FontSize = 12, FontFamily = Theme.Font, Foreground = MemoTheme.Brush(Theme.Text) };
             label.MaxHeight = 20; label.ClipToBounds = true;
             label.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(label, 1); content.Children.Add(label); button.Content = content;
             AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");

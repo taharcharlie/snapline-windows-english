@@ -101,7 +101,7 @@ namespace Snapline
                 Notify(copied ? "Captured, hung and copied. Click 'Add caption' under the image to note its purpose." : "Captured and hung; the clipboard was busy, click the image to copy it.");
             }
             else Notify(copied ? (ShortcutCollects ? "Screenshot copied. To hang it automatically, use " + CaptureShortcutLabel + "." :
-                "Screenshot copied. To hang automatically, pick Ctrl+B or a custom shortcut in the tray menu.") : "The clipboard was busy and the screenshot was not copied. Try again.");
+                "Screenshot copied. To hang automatically, set a capture shortcut in the tray menu.") : "The clipboard was busy and the screenshot was not copied. Try again.");
         }
         internal void SetupWatchers()
         {

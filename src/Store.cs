@@ -44,12 +44,14 @@ namespace Snapline
         [DataMember] public bool ScreenshotFolder = false;
         [DataMember] public List<string> Folders = new List<string>();
         [DataMember] public bool WelcomeShown;
-        [DataMember] public string CaptureShortcut = "CtrlB";
+        [DataMember] public string CaptureShortcut = "Custom";
         [DataMember] public int CaptureShortcutRevision = 1;
-        [DataMember] public uint CustomCaptureModifiers;
-        [DataMember] public uint CustomCaptureKey;
+        [DataMember] public uint CustomCaptureModifiers = 3;
+        [DataMember] public uint CustomCaptureKey = 0x41;
         [DataMember] public bool StartupEnabled;
         [DataMember] public int StartupRevision;
+        // Rope slack in percent; 0 means "not set" and reads as 100.
+        [DataMember] public int LineSlack;
     }
 
     sealed partial class Store

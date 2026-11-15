@@ -35,7 +35,10 @@ namespace Snapline
         readonly Canvas canvas = new Canvas();
         readonly TranslateTransform shelfSlide = new TranslateTransform();
         bool opening, collapsing, renderDeferred;
-        internal const double ShelfHeight = 270, HiddenShelfOffset = -286;
+        internal const double ShelfHeight = 270, HiddenShelfOffset = -350;
+        // The stage is the clipped area below the bar; cards slide out from under its top edge.
+        Grid stage;
+        double lineTop;
         int transitionSerial;
         internal bool Collapsing { get { return collapsing; } }
         internal bool Opening { get { return opening; } }
@@ -91,8 +94,9 @@ namespace Snapline
             Topmost = true;
             Height = 4; Width = 1000;
             canvas.RenderTransform = shelfSlide;
-            Content = new Grid { Children = { canvas, motionLayer } };
-            FontFamily = new FontFamily("Microsoft YaHei UI");
+            stage = new Grid { ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top, Children = { canvas, motionLayer } };
+            Content = stage;
+            FontFamily = Theme.Font;
             UseLayoutRounding = true;
             int knownCount = store.Items.Count + store.Notes.Count;
             store.Changed = delegate { int count = store.Items.Count + store.Notes.Count; bool deckChanged = count != knownCount; if (count > knownCount) page = 0; knownCount = count; Render(deckChanged); };
@@ -119,7 +123,7 @@ namespace Snapline
             Native.SetWindowLong(handle, -20, Native.GetWindowLong(handle, -20) | 0x08000000 | 0x00000080);
 
             ClipboardRegistered = false; // Only direct capture results are collected.
-            HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x54); // Ctrl+Alt+T, no repeat.
+            HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x53); // Ctrl+Alt+S, no repeat.
             RegisterCaptureShortcut();
             screen = ScreenUnderPointer();
             MakeTray();
@@ -153,7 +157,7 @@ namespace Snapline
             }
 
             if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
-            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + T is in use by another program. Open the shelf from the top edge or the tray.");
+            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + S is in use by another program. Open the line from the top edge or the tray.");
         }
         void StartupNotice(string message)
         {
@@ -193,17 +197,41 @@ namespace Snapline
             screen = target;
             var area = screen.WorkingArea;
             double scale = Dpi();
-            int height = (int)Math.Ceiling((open ? ShelfHeight : 4) * scale);
+            lineTop = open ? BarBottom(area, scale) : 0;
+            int height = (int)Math.Ceiling((open ? ShelfHeight + SlackDrop + lineTop : 4) * scale);
             Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, height, 0x0010);
             // A monitor move can change the WPF presentation source's DPI.
             scale = Dpi();
-            int updated = (int)Math.Ceiling((open ? ShelfHeight : 4) * scale);
+            int updated = (int)Math.Ceiling((open ? ShelfHeight + SlackDrop + lineTop : 4) * scale);
             if (height != updated) Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, updated, 0x0010);
             shelfWidth = area.Width / scale;
             canvas.Width = shelfWidth;
-            canvas.Height = open ? ShelfHeight : 4;
+            canvas.Height = open ? ShelfHeight + SlackDrop : 4;
+            stage.Margin = new Thickness(0, lineTop, 0, 0);
+            stage.Height = canvas.Height;
             if (changed) page = 0;
         }
+        // Bottom edge of a komorebi bar docked at the top of this screen, in WPF units; 0 when there is none.
+        double BarBottom(Drawing.Rectangle area, double scale)
+        {
+            try
+            {
+                foreach (var process in Process.GetProcessesByName("komorebi-bar"))
+                {
+                    IntPtr bar = process.MainWindowHandle; Native.Rect r;
+                    if (bar == IntPtr.Zero || !Native.GetWindowRect(bar, out r)) continue;
+                    int middle = area.Left + area.Width / 2, bottom = r.Bottom - area.Top;
+                    bool docked = r.Top <= area.Top + 4 && r.Left < middle && r.Right > middle && r.Right - r.Left > area.Width / 2;
+                    if (docked && bottom > 0 && bottom < area.Height / 6) return Math.Ceiling(bottom / scale);
+                }
+            }
+            catch (Exception ex) { store.Log("Find bar", ex); }
+            return 0;
+        }
+        internal double Slack { get { int v = store.Settings.LineSlack; return (v <= 0 ? 100 : v) / 100.0; } }
+        // Extra room below the cards when the rope hangs looser than normal.
+        double SlackDrop { get { return Math.Max(0, Slack - 1) * 52; } }
+        double Lean(double degrees) { return degrees * (0.4 + 0.6 * Slack); }
         internal Drawing.Rectangle IndicatorHitBounds()
         {
             if (indicator == null || expanded || !IsLoaded) return Drawing.Rectangle.Empty;
@@ -245,7 +273,7 @@ namespace Snapline
             if (collapsing) return;
             if (!expanded) TryRevealFromIndicator();
             bool inside = expanded && p.X >= screen.WorkingArea.Left && p.X < screen.WorkingArea.Right &&
-                p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + 266 * Dpi();
+                p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + (266 + SlackDrop + lineTop) * Dpi();
             if (inside) lastInside = now;
             if (expanded && !pinned && now > keepUntil && (now - lastInside).TotalMilliseconds > 700) Collapse(false);
             if (toast != "" && now > toastUntil) { toast = ""; UpdateToast(); }

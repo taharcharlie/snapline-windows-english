@@ -33,31 +33,31 @@ namespace Snapline
         ToolTip HelpPopup()
         {
             var content = new StackPanel { Width = 278 };
-            var title = Text("Snapline · Tips", 13, "#FF27668F");
+            var title = Text("Snapline · Tips", 14, Theme.Accent);
             title.FontWeight = FontWeights.SemiBold; title.Margin = new Thickness(0, 0, 0, 10);
             content.Children.Add(title);
             AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture a region and hang it" : "Set a capture shortcut in the tray menu");
             if (!CaptureHotkeyRegistered && store.Settings.CaptureShortcut != "None")
-                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = 10, Foreground = Brush("#FF9C6A3B"), Margin = new Thickness(0, 0, 0, 7) });
+                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = 10, Foreground = Brush(Theme.Warn), Margin = new Thickness(0, 0, 0, 7) });
             AddHelpRow(content, "Scissors button", "Copies only, does not hang");
-            AddHelpRow(content, "Touch the blue line", "Opens the shelf");
+            AddHelpRow(content, "Touch the top line", "Opens the line");
             AddHelpRow(content, "Slip under an image", "Add or edit its caption");
-            AddHelpRow(content, "Ctrl + Alt + T", "Pin open / close");
+            AddHelpRow(content, "Ctrl + Alt + S", "Pin open / close");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Double-click a note", "Edit text and paper; right-click to copy or delete");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
             AddHelpRow(content, "Click / double-click", "Copy image / open it");
             AddHelpRow(content, "Drag out / long-press", "Drop into a folder / edit in Paint");
             AddHelpRow(content, "Right-click an image", "Save as, remove and more");
-            var footer = Text("Only shortcut captures are collected; customise in the tray", 10, "#FF81909D");
+            var footer = Text("Only shortcut captures are collected; customise in the tray", 10, Theme.Mid);
             footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
             if (store.Settings.CaptureShortcut == "CtrlB")
             {
-                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in the tray", 10, "#FF9C6A3B");
+                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in the tray", 10, Theme.Warn);
                 shortcutNote.Margin = new Thickness(0, 5, 0, 0); content.Children.Add(shortcutNote);
             }
-            var body = new Border { Child = content, Padding = new Thickness(14), CornerRadius = new CornerRadius(10),
-                Background = Brush("#FFF9FCFF"), BorderBrush = Brush("#FFB9E2FA"), BorderThickness = new Thickness(1) };
+            var body = new Border { Child = content, Padding = new Thickness(14), CornerRadius = Theme.Radius(10),
+                Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1) };
             var tip = new ToolTip { Content = body, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
                 Padding = new Thickness(0), HasDropShadow = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
                 HorizontalOffset = -67, VerticalOffset = 7, FontFamily = FontFamily };
@@ -70,8 +70,8 @@ namespace Snapline
             var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var label = Text(key, 10.5, "#FF347DA7"); label.TextWrapping = TextWrapping.Wrap; label.Margin = new Thickness(0, 0, 8, 0);
-            var detail = new TextBlock { Text = action, FontSize = 10.5, Foreground = Brush("#FF596775"), TextWrapping = TextWrapping.Wrap };
+            var label = Text(key, 12, Theme.Light); label.TextWrapping = TextWrapping.Wrap; label.Margin = new Thickness(0, 0, 8, 0);
+            var detail = new TextBlock { Text = action, FontSize = 12, Foreground = Brush(Theme.Mid), TextWrapping = TextWrapping.Wrap };
             Grid.SetColumn(detail, 1); row.Children.Add(label); row.Children.Add(detail); content.Children.Add(row);
         }
         MenuItem Item(string text, Action action)
@@ -103,7 +103,7 @@ namespace Snapline
         void Place(UIElement element, double x, double y) { Canvas.SetLeft(element, x); Canvas.SetTop(element, y); canvas.Children.Add(element); }
         Button Tool(string text, string tip, Action click)
         {
-            var button = new Button { Content = text, ToolTip = tip, Height = 28, MinWidth = 28, Padding = new Thickness(8, 2, 8, 2), Background = Brush("#CCF3F5F8"), Foreground = Brush("#FF727B89"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand, FontSize = 12, Focusable = false };
+            var button = new Button { Content = text, ToolTip = tip, Height = 28, MinWidth = 28, Padding = new Thickness(8, 2, 8, 2), Background = Brush(Theme.Alpha("CC", Theme.Panel)), Foreground = Brush(Theme.Text), BorderThickness = new Thickness(0), Cursor = Cursors.Hand, FontSize = 12, Focusable = false };
             AutomationProperties.SetName(button, tip);
             button.Click += delegate { click(); };
             return button;
@@ -125,22 +125,24 @@ namespace Snapline
         List<System.Windows.Point> RopeNodes()
         {
             var nodes = new List<System.Windows.Point>();
-            nodes.Add(new System.Windows.Point(24, 18));
+            nodes.Add(new System.Windows.Point(24, RopeTop));
             int imageCount = VisibleCardCount(), hangingCount = imageCount + 1;
-            double sag = 42 + 2 * Math.Min(hangingCount, 4);
+            double sag = (42 + 2 * Math.Min(hangingCount, 4)) * Slack;
             for (int i = 0; i < hangingCount; i++)
             {
                 double x = HangingCenter(i, imageCount);
                 double loadPosition = (i + 1.0) / (hangingCount + 1.0);
-                nodes.Add(new System.Windows.Point(x, 18 + sag * Math.Sin(Math.PI * loadPosition)));
+                nodes.Add(new System.Windows.Point(x, RopeTop + sag * Math.Sin(Math.PI * loadPosition)));
             }
-            nodes.Add(new System.Windows.Point(shelfWidth - 24, 18));
+            nodes.Add(new System.Windows.Point(shelfWidth - 24, RopeTop));
             return nodes;
         }
-        static double StrandSag(System.Windows.Point a, System.Windows.Point b)
+        // Where the rope is tied: just under the top edge of the stage, which sits at the bar's bottom edge.
+        const double RopeTop = 7;
+        double StrandSag(System.Windows.Point a, System.Windows.Point b)
         {
             // A little slack between pegs, with the larger dip caused by the hanging photos.
-            return Math.Min(8, Math.Max(1.5, (b.X - a.X) / 80));
+            return Math.Min(8, Math.Max(1.5, (b.X - a.X) / 80)) * Math.Min(1.6, Slack);
         }
         double RopeY(double x)
         {
@@ -152,7 +154,7 @@ namespace Snapline
                 double t = Math.Max(0, Math.Min(1, (x - a.X) / Math.Max(1, b.X - a.X)));
                 return a.Y + (b.Y - a.Y) * t + 4 * StrandSag(a, b) * t * (1 - t);
             }
-            return 18;
+            return RopeTop;
         }
 
         void ChangePage(int step)
@@ -173,7 +175,7 @@ namespace Snapline
             if (!expanded) motionLayer.Children.Clear();
             if (!expanded)
             {
-                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = new CornerRadius(1), Background = Brush("#D671C6FA"), ToolTip = "Touch this blue line to open · See the 'Tips' card for help" };
+                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = Theme.Radius(1), Background = Brush(Theme.Accent), ToolTip = "Touch this line to open · See the 'Tips' card for help" };
                 indicator = mark;
                 mark.MouseEnter += delegate { TryRevealFromIndicator(); };
                 Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.IndicatorWidth) / 2), 0);
@@ -200,16 +202,16 @@ namespace Snapline
             geometry.Freeze();
             canvas.Children.Add(new System.Windows.Shapes.Path
             {
-                Data = geometry, Stroke = Brush("#8FEAF8FF"), StrokeThickness = 3.5,
+                Data = geometry, Stroke = Brush(Theme.Clear), StrokeThickness = 3.5,
                 IsHitTestVisible = false, Effect = new DropShadowEffect { BlurRadius = 2, ShadowDepth = 1, Opacity = 0.12 }
             });
             canvas.Children.Add(new System.Windows.Shapes.Path
             {
-                Data = geometry, Stroke = Brush("#FF72C7FA"), StrokeThickness = 1.6,
+                Data = geometry, Stroke = Brush(Theme.Text), StrokeThickness = 1.6,
                 StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round
             });
-            Place(new Ellipse { Width = 4, Height = 4, Fill = Brush("#FFA1DDFC"), IsHitTestVisible = false }, left - 2, 16);
-            Place(new Ellipse { Width = 4, Height = 4, Fill = Brush("#FFA1DDFC"), IsHitTestVisible = false }, right - 2, 16);
+            Place(new Ellipse { Width = 5, Height = 5, Fill = Brush(Theme.Accent), IsHitTestVisible = false }, left - 2.5, RopeTop - 2.5);
+            Place(new Ellipse { Width = 5, Height = 5, Fill = Brush(Theme.Accent), IsHitTestVisible = false }, right - 2.5, RopeTop - 2.5);
             int perPage = CardsPerPage();
             var deck = Deck();
             int maxPage = Math.Max(0, (deck.Count - 1) / perPage);
@@ -238,49 +240,53 @@ namespace Snapline
             if (!expanded) return;
             if (toast != "")
             {
-                var note = Text(toast, 11, "#FF525F6C");
+                var note = Text(toast, 11, Theme.Text);
                 var feedback = new Border
                 {
                     Child = note, Padding = new Thickness(12, 6, 12, 6),
-                    CornerRadius = new CornerRadius(12), Background = Brush("#EAF7F8FA"),
-                    BorderBrush = Brush("#88D3D7DE"), BorderThickness = new Thickness(0.5),
+                    CornerRadius = Theme.Radius(12), Background = Brush(Theme.Alpha("EA", Theme.Panel)),
+                    BorderBrush = Brush(Theme.Alpha("88", Theme.Rule)), BorderThickness = new Thickness(0.5),
                     IsHitTestVisible = false, Tag = "ShelfFeedback"
                 };
                 feedback.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
                 toastElement = feedback;
-                Place(feedback, (shelfWidth - feedback.DesiredSize.Width) / 2, 242);
+                Place(feedback, (shelfWidth - feedback.DesiredSize.Width) / 2, 242 + SlackDrop);
             }
         }
 
         void MakeHelpCard(double center, double y, int index)
         {
             const double width = 172, height = 148;
-            double lean = 1.8;
+            double lean = Lean(1.8);
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, RenderTransform = swing, Cursor = Cursors.Hand };
             AutomationProperties.SetName(grid, "Tips (hover to view)");
             var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
-            var title = Text("Tips", 16, "#FF307FAF");
+            var title = Text("Tips", 18, Theme.White);
             title.FontWeight = FontWeights.SemiBold; title.HorizontalAlignment = HorizontalAlignment.Center;
             content.Children.Add(title);
-            var subtitle = Text("Hover for help", 11, "#FF80929F");
+            var subtitle = Text("Hover for help", 11, Theme.Mid);
             subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4, 0, 0);
             content.Children.Add(subtitle);
-            var capture = Tool("✂ Capture (copy only)", "Copies only; press Ctrl + B to hang automatically", StartCapture);
+            var capture = Tool("✂ Capture (copy only)", "Copies only; use the capture shortcut to hang automatically", StartCapture);
             capture.FontSize = 11; capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
-            capture.Background = Brush("#FFE4F4FF"); capture.Foreground = Brush("#FF3C89B8");
+            capture.Background = Brush(Theme.Inset); capture.Foreground = Brush(Theme.Text);
             capture.ToolTip = null; content.Children.Add(capture);
             var addNote = Tool("＋ Note", "New note", NewNote);
             addNote.FontSize = 12; addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
-            addNote.Background = Brush("#FFFFF3C9"); addNote.Foreground = Brush("#FF9D8345");
+            addNote.Background = Brush(Theme.Accent); addNote.Foreground = Brush(Theme.Bg);
             System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
             content.Children.Add(addNote);
             grid.Children.Add(new Border
             {
-                CornerRadius = new CornerRadius(5), Background = Brush("#F5F6FBFF"),
-                BorderBrush = Brush("#E5C3E7FB"), BorderThickness = new Thickness(1),
+                CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel),
+                BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1),
                 Child = content, Effect = new DropShadowEffect { BlurRadius = 10, Opacity = 0.16, ShadowDepth = 3 }
             });
+            // Corner brackets mark the Tips card as the control card on the line.
+            var brackets = Geometry.Parse(String.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "M0,12 V0 H12 M{0},0 H{1} V12 M{1},{2} V{3} H{0} M12,{3} H0 V{2}", width - 12, width, height - 12, height));
+            grid.Children.Add(new System.Windows.Shapes.Path { Data = brackets, Stroke = Brush(Theme.Accent), StrokeThickness = 1.5, IsHitTestVisible = false });
             AddHangingPeg(grid);
             helpTip = HelpPopup();
             helpTip.PlacementTarget = grid;
@@ -304,9 +310,9 @@ namespace Snapline
         {
             var pin = new Border
             {
-                Width = 6, Height = 22, CornerRadius = new CornerRadius(2), Tag = "HangingPeg",
-                Background = new LinearGradientBrush(Color.FromRgb(236, 238, 243), Color.FromRgb(170, 175, 190), 0),
-                BorderBrush = Brush("#D8FFFFFF"), BorderThickness = new Thickness(0.5),
+                Width = 6, Height = 22, CornerRadius = Theme.Radius(2), Tag = "HangingPeg",
+                Background = Brush(Theme.Text),
+                BorderThickness = new Thickness(0),
                 VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, -20, 0, 0), IsHitTestVisible = false,
                 Effect = new DropShadowEffect { BlurRadius = 2, ShadowDepth = 1, Opacity = 0.16 }
@@ -314,7 +320,7 @@ namespace Snapline
             grid.Children.Add(pin);
             grid.Children.Add(new Border
             {
-                Width = 1, Height = 14, Background = Brush("#668A909D"), Tag = "HangingPeg",
+                Width = 1, Height = 14, Background = Brush(Theme.Alpha("66", Theme.Mid)), Tag = "HangingPeg",
                 VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, -16, 0, 0), IsHitTestVisible = false
             });
@@ -338,26 +344,26 @@ namespace Snapline
             var preview = new Image { Width = width, Height = height, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center };
             var content = new StackPanel { Width = bodyWidth };
             ScrollViewer remarkScroll = null;
-            var title = Text("Preview", 12, "#FF387DA6");
+            var title = Text("Preview", 12, Theme.Text);
             title.Margin = new Thickness(0, 0, 0, 8); content.Children.Add(title);
-            content.Children.Add(new Border { Child = preview, Background = Brush("#FFF0F4F8"), CornerRadius = new CornerRadius(4), ClipToBounds = true });
+            content.Children.Add(new Border { Child = preview, Background = Brush(Theme.Panel), CornerRadius = Theme.Radius(4), ClipToBounds = true });
             if (remarkBudget > 0)
             {
                 var remarkText = new TextBlock { Text = shot.Remark, FontSize = 13, LineHeight = 20, TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("#FF6D6042") };
+                    Foreground = Brush(Theme.Light) };
                 AutomationProperties.SetAutomationId(remarkText, "PreviewRemark");
                 var scroll = new ScrollViewer { Content = remarkText, MaxHeight = remarkBudget, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
                 remarkScroll = scroll;
                 content.Children.Add(new Border { Child = scroll, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 9, 0, 0),
-                    CornerRadius = new CornerRadius(5), Background = Brush("#FFFFF7DD"), BorderBrush = Brush("#FFEBDDB6"), BorderThickness = new Thickness(1) });
+                    CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1) });
             }
             content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to open · Drag out" + (remarkBudget > 0 ? " · Scroll for long captions" : ""), FontSize = 11,
-                Foreground = Brush("#FF82909B"), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
+                Foreground = Brush(Theme.Mid), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
             var tip = new ToolTip
             {
-                Content = new Border { Child = content, Padding = new Thickness(10), CornerRadius = new CornerRadius(9),
-                    Background = Brush("#FFF9FCFF"), BorderBrush = Brush("#FFC1E4F8"), BorderThickness = new Thickness(1) },
+                Content = new Border { Child = content, Padding = new Thickness(10), CornerRadius = Theme.Radius(9),
+                    Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1) },
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0),
                 HasDropShadow = true, IsHitTestVisible = false, FontFamily = FontFamily,
                 Tag = remarkScroll,
@@ -391,14 +397,14 @@ namespace Snapline
             double scale = Math.Min(192 / imageWidth, 124 / imageHeight);
             double width = Math.Max(70, imageWidth * scale) + 7;
             double height = Math.Max(54, imageHeight * scale) + 7;
-            double lean = new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5];
+            double lean = Lean(new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5]);
             double cardWidth = width;
             var swing = new RotateTransform(lean, cardWidth / 2, -15);
             var card = new Grid { Width = cardWidth, Height = height + RemarkStripHeight, RenderTransform = swing, Tag = shot };
             card.Children.Add(new Border
             {
-                CornerRadius = new CornerRadius(5), Background = Brush("#E8F5FF"), IsHitTestVisible = false,
-                Effect = new DropShadowEffect { Color = MemoTheme.Hex("#354155"), BlurRadius = 10, Opacity = 0.18, ShadowDepth = 3 }
+                CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel), IsHitTestVisible = false,
+                Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), BlurRadius = 10, Opacity = 0.18, ShadowDepth = 3 }
             });
             var grid = new Grid
             {
@@ -420,13 +426,13 @@ namespace Snapline
             };
             var frame = new Border
             {
-                CornerRadius = new CornerRadius(5, 5, 0, 0), Background = Brush("#F7F8FB"),
-                BorderBrush = Brush("#C6E2F5"), BorderThickness = new Thickness(1, 1, 1, 0),
+                CornerRadius = Theme.Radius(5, 5, 0, 0), Background = Brush(Theme.Panel),
+                BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1, 1, 1, 0),
                 Padding = new Thickness(2.5)
             };
             frame.Child = new Border
             {
-                CornerRadius = new CornerRadius(3), ClipToBounds = true,
+                CornerRadius = Theme.Radius(3), ClipToBounds = true,
                 Child = new Image { Source = shot.Thumb, Stretch = Stretch.Uniform }
             };
             grid.Children.Add(frame);
@@ -434,7 +440,7 @@ namespace Snapline
             var remove = new Button
             {
                 Content = "×", Width = 19, Height = 19, FontSize = 13,
-                Background = Brush("#C948505F"), Foreground = Brushes.White, BorderThickness = new Thickness(0),
+                Background = Brush(Theme.Alpha("E6", Theme.Bg)), Foreground = Brush(Theme.Light), BorderThickness = new Thickness(0),
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, 3, 3, 0), Focusable = false, ToolTip = "Remove saved copy",
                 Opacity = 0, IsHitTestVisible = false, Tag = "DeleteButton"

@@ -100,18 +100,18 @@ namespace Snapline
         internal static string Normalize(string color) { return Colors.Contains(color) ? color : "Butter"; }
         internal static Color Hex(string value) { return (Color)ColorConverter.ConvertFromString(value); }
         internal static SolidColorBrush Brush(string value) { var b = new SolidColorBrush(Hex(value)); b.Freeze(); return b; }
-        internal static string Top(string color) { return color == "Mint" ? "#F0F7E9" : color == "Lavender" ? "#F2EBFA" : "#FFF3BE"; }
-        internal static string Bottom(string color) { return color == "Mint" ? "#E5F0D9" : color == "Lavender" ? "#E8DCF5" : "#FFF8D9"; }
-        internal static string Accent(string color) { return color == "Mint" ? "#75966B" : color == "Lavender" ? "#9680B2" : "#B69A4D"; }
-        internal static string Edge(string color) { return color == "Mint" ? "#CDDDBC" : color == "Lavender" ? "#D8C7EB" : "#E9D799"; }
-        internal static Brush Paper(string color) { return new LinearGradientBrush(Hex(Top(color)), Hex(Bottom(color)), 90); }
+        internal static string Top(string color) { return color == "Mint" ? Theme.Panel : color == "Lavender" ? Theme.Panel : Theme.Panel; }
+        internal static string Bottom(string color) { return color == "Mint" ? Theme.Panel : color == "Lavender" ? Theme.Panel : Theme.Panel; }
+        internal static string Accent(string color) { return Theme.NoteAccent(color); }
+        internal static string Edge(string color) { return color == "Mint" ? Theme.Rule : color == "Lavender" ? Theme.Rule : Theme.Rule; }
+        internal static Brush Paper(string color) { return Brush(Theme.Panel); }
         internal static Button Button(string text, string name)
         {
             var b = new Button { Content = text, Height = 32, Padding = new Thickness(12, 4, 12, 4), FontSize = 12, Cursor = Cursors.Hand,
-                Background = Brush("#18FFFFFF"), Foreground = Brush("#665E48"), BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(0) };
+                Background = Brush(Theme.Alpha("18", Theme.White)), Foreground = Brush(Theme.Light), BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(0) };
             System.Windows.Automation.AutomationProperties.SetName(b, name);
             var frame = new FrameworkElementFactory(typeof(Border));
-            frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(7));
+            frame.SetValue(Border.CornerRadiusProperty, Theme.Radius(7));
             frame.SetBinding(Border.BackgroundProperty, new Binding("Background") { RelativeSource = RelativeSource.TemplatedParent });
             frame.SetBinding(Border.BorderBrushProperty, new Binding("BorderBrush") { RelativeSource = RelativeSource.TemplatedParent });
             frame.SetBinding(Border.BorderThicknessProperty, new Binding("BorderThickness") { RelativeSource = RelativeSource.TemplatedParent });
@@ -125,7 +125,7 @@ namespace Snapline
             return b;
         }
         internal static TextBlock Text(string text, double size, string color)
-        { return new TextBlock { Text = text, FontSize = size, Foreground = Brush(color), FontFamily = new FontFamily("Microsoft YaHei UI") }; }
+        { return new TextBlock { Text = text, FontSize = size, Foreground = Brush(color), FontFamily = Theme.Font }; }
     }
 
     sealed class MemoEditor : Window
@@ -146,11 +146,11 @@ namespace Snapline
             ShowInTaskbar = false; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            FontFamily = new FontFamily("Microsoft YaHei UI");
+            FontFamily = Theme.Font;
             UseLayoutRounding = true;
             var outer = new Grid { Margin = new Thickness(14) };
-            paper = new Border { CornerRadius = new CornerRadius(12), Background = MemoTheme.Paper(color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(color)), BorderThickness = new Thickness(1),
-                Effect = new DropShadowEffect { Color = MemoTheme.Hex("#354155"), BlurRadius = 22, ShadowDepth = 6, Opacity = 0.20 } };
+            paper = new Border { CornerRadius = Theme.Radius(12), Background = MemoTheme.Paper(color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(color)), BorderThickness = new Thickness(1),
+                Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), BlurRadius = 22, ShadowDepth = 6, Opacity = 0.20 } };
             outer.Children.Add(paper);
             var content = new Grid { Margin = new Thickness(25, 22, 25, 18) };
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -160,8 +160,8 @@ namespace Snapline
             outer.Children.Add(content);
             var heading = new Grid { Margin = new Thickness(0, 0, 0, 16) };
             var title = new StackPanel();
-            title.Children.Add(MemoTheme.Text("Quick note", 22, "#514A36"));
-            title.Children.Add(new TextBlock { Text = "Hang a thought here.", FontSize = 11, Foreground = MemoTheme.Brush("#9A8E6A"), Margin = new Thickness(0, 6, 0, 0) });
+            title.Children.Add(MemoTheme.Text("Quick note", 22, Theme.Light));
+            title.Children.Add(new TextBlock { Text = "Hang a thought here.", FontSize = 11, Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 6, 0, 0) });
             title.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { if (e.ClickCount == 1) DragMove(); };
             heading.Children.Add(title);
             var close = MemoTheme.Button("×", "Close the note editor"); close.Width = 30; close.Height = 30; close.FontSize = 20;
@@ -169,7 +169,7 @@ namespace Snapline
             close.Click += delegate { Close(); }; heading.Children.Add(close);
             content.Children.Add(heading);
             var palette = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
-            palette.Children.Add(new TextBlock { Text = "Paper", FontSize = 11, Foreground = MemoTheme.Brush("#93856A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 8) });
+            palette.Children.Add(new TextBlock { Text = "Paper", FontSize = 11, Foreground = MemoTheme.Brush(Theme.Text), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 8) });
             for (int i = 0; i < MemoTheme.Colors.Length; i++)
             {
                 string mode = MemoTheme.Colors[i];
@@ -183,27 +183,27 @@ namespace Snapline
             }
             Grid.SetRow(palette, 1); content.Children.Add(palette);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 15) };
-            writing.Children.Add(new Border { Background = MemoTheme.Brush("#16FFFFFF"), CornerRadius = new CornerRadius(6) });
+            writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("16", Theme.White)), CornerRadius = Theme.Radius(6) });
             var rules = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
-            for (int i = 0; i < 14; i++) rules.Children.Add(new Line { X1 = 11, X2 = 445, Y1 = 34 + 25 * i, Y2 = 34 + 25 * i, Stroke = MemoTheme.Brush("#187F7454"), StrokeThickness = 0.5 });
+            for (int i = 0; i < 14; i++) rules.Children.Add(new Line { X1 = 11, X2 = 445, Y1 = 34 + 25 * i, Y2 = 34 + 25 * i, Stroke = MemoTheme.Brush(Theme.Alpha("18", Theme.Text)), StrokeThickness = 0.5 });
             writing.Children.Add(rules);
             input = new TextBox { Text = note.Text, MaxLength = Store.MaxNoteText, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(11, 10, 10, 10),
-                FontSize = 15, Foreground = MemoTheme.Brush("#514C3C"), CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color)) };
+                FontSize = 15, Foreground = MemoTheme.Brush(Theme.Light), CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color)) };
             TextBlock.SetLineHeight(input, 25);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "NoteText");
             System.Windows.Automation.AutomationProperties.SetName(input, "Note text");
             writing.Children.Add(input);
             placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…", FontSize = 15, LineHeight = 25,
-                Foreground = MemoTheme.Brush("#AD9E78"), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
+                Foreground = MemoTheme.Brush(Theme.Mid), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             writing.Children.Add(placeholder);
             input.TextChanged += delegate { placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; MarkDirty(); };
             Grid.SetRow(writing, 2); content.Children.Add(writing);
             var footer = new Grid();
-            status = MemoTheme.Text("Saved automatically on this PC", 11, "#978A68"); status.VerticalAlignment = VerticalAlignment.Center; status.MaxWidth = 290; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Left; footer.Children.Add(status);
+            status = MemoTheme.Text("Saved automatically on this PC", 11, Theme.Text); status.VerticalAlignment = VerticalAlignment.Center; status.MaxWidth = 290; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Left; footer.Children.Add(status);
             var done = MemoTheme.Button("Done  ↵", "Finish editing the note"); done.Width = 92; done.HorizontalAlignment = HorizontalAlignment.Right;
-            done.Background = MemoTheme.Brush("#FFFDF8"); done.Foreground = MemoTheme.Brush("#756341"); done.BorderBrush = MemoTheme.Brush("#70C7B17A"); done.BorderThickness = new Thickness(1);
+            done.Background = MemoTheme.Brush(Theme.Panel); done.Foreground = MemoTheme.Brush(Theme.Light); done.BorderBrush = MemoTheme.Brush(Theme.Alpha("70", Theme.Mid)); done.BorderThickness = new Thickness(1);
             System.Windows.Automation.AutomationProperties.SetAutomationId(done, "NoteDone");
             done.ToolTip = "Ctrl+Enter or Esc closes and saves"; done.Click += delegate { Close(); }; footer.Children.Add(done);
             Grid.SetRow(footer, 3); content.Children.Add(footer);
@@ -222,11 +222,11 @@ namespace Snapline
         {
             paper.Background = MemoTheme.Paper(color); paper.BorderBrush = MemoTheme.Brush(MemoTheme.Edge(color));
             if (input != null) input.CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color));
-            foreach (var entry in swatches) entry.Value.Stroke = MemoTheme.Brush(entry.Key == color ? MemoTheme.Accent(color) : "#40FFFFFF");
+            foreach (var entry in swatches) entry.Value.Stroke = MemoTheme.Brush(entry.Key == color ? MemoTheme.Accent(color) : Theme.Alpha("40", Theme.White));
         }
         void MarkDirty()
         {
-            dirty = true; status.Text = "Saving…"; status.Foreground = MemoTheme.Brush("#978A68");
+            dirty = true; status.Text = "Saving…"; status.Foreground = MemoTheme.Brush(Theme.Text);
             saveDelay.Stop(); saveDelay.Start();
         }
         internal bool FlushChanges()
@@ -236,11 +236,11 @@ namespace Snapline
             try
             {
                 store.UpdateNote(memo, input.Text, color);
-                dirty = false; status.Text = "Saved · " + DateTime.Now.ToString("HH:mm"); status.Foreground = MemoTheme.Brush("#859064"); return true;
+                dirty = false; status.Text = "Saved · " + DateTime.Now.ToString("HH:mm"); status.Foreground = MemoTheme.Brush(Theme.Text); return true;
             }
             catch (Exception ex)
             {
-                store.Log("Save memo", ex); status.Text = "Could not save. Your text is kept in this window; try again shortly."; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
+                store.Log("Save memo", ex); status.Text = "Could not save. Your text is kept in this window; try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); return false;
             }
         }
         internal bool IsBlank { get { return String.IsNullOrWhiteSpace(input.Text); } }
@@ -306,12 +306,12 @@ namespace Snapline
             double width = Math.Max(200, Math.Min(360, screen.WorkingArea.Width / Dpi() - 60));
             var content = new StackPanel { Width = width };
             var title = MemoTheme.Text("Note", 13, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
-            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, "#534F41");
+            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, Theme.Light);
             text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             content.Children.Add(scroll);
-            content.Children.Add(new TextBlock { Text = "Double-click to edit · Right-click to copy or delete", FontSize = 11, Foreground = MemoTheme.Brush("#988D71"), Margin = new Thickness(0, 13, 0, 0) });
-            var tip = new ToolTip { Content = new Border { Child = content, Padding = new Thickness(18), CornerRadius = new CornerRadius(9), Background = MemoTheme.Paper(note.Color),
+            content.Children.Add(new TextBlock { Text = "Double-click to edit · Right-click to copy or delete", FontSize = 11, Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
+            var tip = new ToolTip { Content = new Border { Child = content, Padding = new Thickness(18), CornerRadius = Theme.Radius(9), Background = MemoTheme.Paper(note.Color),
                     BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1) },
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HasDropShadow = true,
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, PlacementTarget = target,
@@ -328,31 +328,29 @@ namespace Snapline
         void MakeNoteCard(Memo note, double center, double y, int index)
         {
             const double width = 182, height = 153;
-            double lean = new[] { -2.4, 1.6, -1.1, 2.2 }[index % 4];
+            double lean = Lean(new[] { -2.4, 1.6, -1.1, 2.2 }[index % 4]);
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, Cursor = Cursors.Hand, RenderTransform = swing, Tag = note };
             System.Windows.Automation.AutomationProperties.SetName(grid, "Note " + (note.Text.Length > 30 ? note.Text.Substring(0, 30) : note.Text));
             System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "NoteCard-" + note.Id);
-            grid.Children.Add(new Border { Background = MemoTheme.Paper(note.Color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(0.6), CornerRadius = new CornerRadius(3),
-                Effect = new DropShadowEffect { Color = MemoTheme.Hex("#555D6B"), Opacity = 0.16, ShadowDepth = 4, BlurRadius = 9 } });
-            var details = new Grid { Margin = new Thickness(15, 12, 15, 13), IsHitTestVisible = false };
+            grid.Children.Add(new Border { Background = MemoTheme.Paper(note.Color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1), CornerRadius = Theme.Radius(3),
+                Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), Opacity = 0.16, ShadowDepth = 4, BlurRadius = 9 } });
+            grid.Children.Add(new Border { Height = 4, VerticalAlignment = VerticalAlignment.Top, Background = MemoTheme.Brush(MemoTheme.Accent(note.Color)), IsHitTestVisible = false });
+            var details = new Grid { Margin = new Thickness(14, 14, 14, 11), IsHitTestVisible = false };
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             details.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var header = new Grid(); header.Children.Add(MemoTheme.Text("Note", 10, MemoTheme.Accent(note.Color)));
-            var date = MemoTheme.Text(note.Created.ToString("MMM d"), 9, "#AB9C79"); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
+            var header = new Grid(); header.Children.Add(MemoTheme.Text("Note", 12, Theme.Mid));
+            var date = MemoTheme.Text(note.Created.ToString("MMM d"), 12, Theme.Dim); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
             details.Children.Add(header);
-            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 13, "#5D5541");
+            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 15, Theme.Light);
             body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = 22;
             body.Margin = new Thickness(0, 9, 0, 5); body.ClipToBounds = true;
             Grid.SetRow(body, 1); details.Children.Add(body);
-            var footer = MemoTheme.Text("Double-click to edit", 9, MemoTheme.Accent(note.Color)); footer.Opacity = 0.75; Grid.SetRow(footer, 2); details.Children.Add(footer);
+            var footer = MemoTheme.Text("Double-click to edit", 11, Theme.Dim); Grid.SetRow(footer, 2); details.Children.Add(footer);
             grid.Children.Add(details);
-            grid.Children.Add(new Polygon { Points = new PointCollection { new Point(width - 20, height), new Point(width - 20, height - 20), new Point(width, height - 20) },
-                Fill = MemoTheme.Brush(MemoTheme.Edge(note.Color)), Opacity = 0.48, IsHitTestVisible = false });
-            grid.Children.Add(new Line { X1 = width - 20, Y1 = height, X2 = width, Y2 = height - 20, Stroke = MemoTheme.Brush(MemoTheme.Edge(note.Color)), StrokeThickness = 0.7, IsHitTestVisible = false });
             AddHangingPeg(grid);
-            var remove = MemoTheme.Button("×", "Delete note"); remove.Width = 21; remove.Height = 21; remove.FontSize = 16; remove.Padding = new Thickness(0); remove.Background = MemoTheme.Brush("#DDFFFDF5");
+            var remove = MemoTheme.Button("×", "Delete note"); remove.Width = 21; remove.Height = 21; remove.FontSize = 16; remove.Padding = new Thickness(0); remove.Background = MemoTheme.Brush(Theme.Alpha("DD", Theme.Panel));
             remove.Tag = "DeleteButton";
             remove.HorizontalAlignment = HorizontalAlignment.Right; remove.VerticalAlignment = VerticalAlignment.Top; remove.Margin = new Thickness(0, -9, -8, 0); remove.Opacity = 0; remove.IsHitTestVisible = false;
             remove.Click += delegate { DeleteNote(note); }; grid.Children.Add(remove);
@@ -402,7 +400,7 @@ namespace Snapline
             report.Add("PASS: interrupted saves, additions and deletions preserve existing notes");
             var second = store.AddNote("周末出门走走", "unknown");
             Check(second.Color == "Butter", "Unknown color uses safe default");
-            for (int i = 0; i < Store.MaxItems + 1; i++) store.Add(Program.Demo("MEMO TEST " + i, "截图与便签", i % 2 == 0 ? "#315B75" : "#426C60"), "fixture");
+            for (int i = 0; i < Store.MaxItems + 1; i++) store.Add(Program.Demo("MEMO TEST " + i, "截图与便签", i % 2 == 0 ? Theme.Light : Theme.Light), "fixture");
             Check(store.Items.Count == Store.MaxItems && store.Notes.Count == 2, "Image retention leaves notes intact");
             store.Clear();
             Check(store.Items.Count == 0 && store.Notes.Count == 2 && new Store(root).Notes.Count == 2, "Clearing screenshots preserves notes");

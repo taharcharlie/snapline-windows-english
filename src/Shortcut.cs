@@ -24,7 +24,7 @@ namespace Snapline
             if ((modifiers & 8) != 0) return "Win shortcuts belong to Windows. Use Ctrl, Shift or Alt.";
             if (modifiers == 0 || (modifiers & ~7u) != 0) return "Add Ctrl, Shift or Alt so normal typing is not affected.";
             if (key == 0x7B) return "F12 is reserved by the system. Choose another key.";
-            if (modifiers == 3 && key == 0x54) return "Ctrl + Alt + T already opens the shelf. Choose another.";
+            if (modifiers == 3 && key == 0x53) return "Ctrl + Alt + S already opens the line. Choose another.";
             if (modifiers == 1 && key == 0x73) return "Alt + F4 closes windows. Choose another.";
             bool supported = (key >= 0x41 && key <= 0x5A) || (key >= 0x30 && key <= 0x39) ||
                 (key >= 0x60 && key <= 0x6F) || (key >= 0x70 && key <= 0x87) || key == 0x2C ||

@@ -41,7 +41,7 @@ namespace Snapline
             menu.Items.Add(captureMenu);
             var shortcutMenu = new Forms.ToolStripMenuItem("Capture shortcut");
             string[] modes = { "CtrlB", "CtrlPrintScreen", "ShiftPrintScreen", "Custom", "None" };
-            string[] labels = { "Ctrl + B (default)", "Ctrl + PrtSc (copy only)", "Shift + PrtSc (copy only)", "Custom…", "Shortcut off" };
+            string[] labels = { "Ctrl + B", "Ctrl + PrtSc (copy only)", "Shift + PrtSc (copy only)", "Custom…", "Shortcut off" };
             for (int i = 0; i < modes.Length; i++)
             {
                 string selected = modes[i];
@@ -53,6 +53,15 @@ namespace Snapline
             menu.Items.Add("Open / close (auto-hide)", null, delegate { ToggleFromTray(); });
             menu.Items.Add("New note", null, delegate { NewNote(); });
             menu.Items.Add("Import images…", null, delegate { ChooseFiles(); });
+            var tensionMenu = new Forms.ToolStripMenuItem("Line tension");
+            var tensions = new[] { new { Name = "Tight", Value = 15 }, new { Name = "Firm", Value = 55 }, new { Name = "Normal", Value = 100 }, new { Name = "Loose", Value = 150 }, new { Name = "Very loose", Value = 200 } };
+            foreach (var choice in tensions)
+            {
+                int value = choice.Value;
+                tensionMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(choice.Name, null, delegate { store.Settings.LineSlack = value; store.SaveSettings(); Reveal(); Render(true); keepUntil = DateTime.Now.AddSeconds(3); }) { Tag = value });
+            }
+            tensionMenu.DropDownOpening += delegate { int now = (int)Math.Round(Slack * 100); foreach (Forms.ToolStripMenuItem item in tensionMenu.DropDownItems) item.Checked = (int)item.Tag == now; };
+            menu.Items.Add(tensionMenu);
             pinMenu = new Forms.ToolStripMenuItem("Keep visible", null, delegate { TogglePin(); });
             menu.Items.Add(pinMenu);
             menu.Opening += delegate { pinMenu.Checked = pinned; };
@@ -91,7 +100,7 @@ namespace Snapline
             dialogOpen = true;
             try
             {
-                Forms.MessageBox.Show("Snapline 0.5.8\n\n" + CaptureShortcutLabel + ": capture a region (when the shortcut is available).\n'Tips' card right of the images: hover for help; its button captures and copies only.\nWin + Shift + S and other screenshot tools are not collected.\nCtrl + Alt + T: open / close; stays open once opened.\nDouble-click the tray icon: open temporarily, auto-hides when you leave.\nTray 'Keep visible': tick to stay open, untick to auto-hide again.\nTray 'Start at login': enabled on first run; your choice is remembered.\nTouch the blue line at the top centre: opens the shelf.\n'Add caption' or the slip under an image: note its purpose; Enter saves, Esc cancels.\nClick an image: copy. Double-click: open.\nDrag out: copy as a file. Shift-drag to a folder: move.\nLong-press an image: edit in Paint. Right-click: more actions.\n\nCaptures made with Ctrl+B or your custom shortcut are added automatically. Other screenshots and copied images are not.\nUp to 60 images are kept; the oldest saved copies are cleared beyond that.\nRuns entirely on this PC: no network, no uploads, no changes to system screenshot settings.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
+                Forms.MessageBox.Show("Snapline 0.5.8\n\n" + CaptureShortcutLabel + ": capture a region (when the shortcut is available).\n'Tips' card right of the images: hover for help; its button captures and copies only.\nWin + Shift + S and other screenshot tools are not collected.\nCtrl + Alt + S: open / close; stays open once opened.\nDouble-click the tray icon: open temporarily, auto-hides when you leave.\nTray 'Keep visible': tick to stay open, untick to auto-hide again.\nTray 'Start at login': off until you turn it on.\nTouch the line at the top centre: opens the line.\n'Add caption' or the slip under an image: note its purpose; Enter saves, Esc cancels.\nClick an image: copy. Double-click: open.\nDrag out: copy as a file. Shift-drag to a folder: move.\nLong-press an image: edit in Paint. Right-click: more actions.\n\nCaptures made with the capture shortcut are added automatically. Other screenshots and copied images are not.\nUp to 60 images are kept; the oldest saved copies are cleared beyond that.\nRuns entirely on this PC: no network, no uploads, no changes to system screenshot settings.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
             }
             finally { dialogOpen = false; }
         }

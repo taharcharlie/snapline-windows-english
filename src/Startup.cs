@@ -55,8 +55,8 @@ namespace Snapline
         }
         internal bool Initialize(out string error)
         {
-            // A first normal launch, including an upgrade, enables startup once.
-            return Apply(store.Settings.StartupRevision < 1 || store.Settings.StartupEnabled, out error);
+            // Start at login is opt-in: it stays off until chosen in the tray menu.
+            return Apply(store.Settings.StartupEnabled, out error);
         }
         internal bool Apply(bool enabled, out string error)
         {
