@@ -1,0 +1,360 @@
+// Snapline: a local screenshot shelf for Windows. MIT License.
+// The shelf window: start-up, show/hide, pointer tracking and shutdown.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using Forms = System.Windows.Forms;
+using Drawing = System.Drawing;
+using Path = System.IO.Path;
+
+namespace Snapline
+{
+    sealed partial class Shelf : Window
+    {
+        readonly Store store;
+        readonly bool noCapture, demo;
+        readonly Canvas canvas = new Canvas();
+        readonly TranslateTransform shelfSlide = new TranslateTransform();
+        bool opening, collapsing, renderDeferred;
+        internal const double ShelfHeight = 270, HiddenShelfOffset = -286;
+        int transitionSerial;
+        internal bool Collapsing { get { return collapsing; } }
+        internal bool Opening { get { return opening; } }
+        internal double ShelfOffset { get { return shelfSlide.Y; } }
+        FrameworkElement indicator;
+        FrameworkElement toastElement;
+        readonly DispatcherTimer tick = new DispatcherTimer();
+
+        readonly Dictionary<string, DateTime> pending = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+
+        Forms.NotifyIcon tray;
+        Forms.ToolStripMenuItem captureMenu, pinMenu;
+        internal Forms.ToolStripMenuItem startupMenu;
+        internal StartupRegistration Startup;
+        internal bool StartCollapsed;
+        internal bool Expanded { get { return expanded; } }
+        readonly Dictionary<string, Forms.ToolStripMenuItem> shortcutChoices = new Dictionary<string, Forms.ToolStripMenuItem>();
+        readonly DispatcherTimer captureDelay = new DispatcherTimer();
+        ToolTip helpTip, imageTip;
+        bool helpReading, capturePending;
+        DateTime captureRequested;
+        int captureSerial;
+        bool collectCapture;
+        internal Action<Action<BitmapSource>> CaptureLauncher = delegate(Action<BitmapSource> complete) { complete(RegionCapture.Select()); };
+        FileSystemWatcher inboxWatcher;
+        IntPtr handle;
+        HwndSource source;
+        Forms.Screen screen;
+        bool expanded, pinned, dragging, dialogOpen, shuttingDown;
+        DateTime keepUntil, hideUntil, lastInside;
+        internal Func<IntPtr> ForegroundWindow = Native.GetForegroundWindow;
+        internal Func<Native.Point?> PointerPosition = delegate { Native.Point point; return Native.GetCursorPos(out point) ? (Native.Point?)point : null; };
+
+        int page;
+        double shelfWidth;
+        string toast = "";
+        DateTime toastUntil;
+        internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered;
+        internal string CaptureShortcutLabel { get { var shortcut = ShortcutSpec.From(store.Settings); return shortcut == null ? "Shortcut off" : shortcut.Label; } }
+        internal Shelf(Store data, bool noCapture, bool demo)
+        {
+            store = data;
+            this.noCapture = noCapture;
+            this.demo = demo;
+            Title = "Snapline";
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            AllowsTransparency = true;
+            Background = Brushes.Transparent;
+            ShowInTaskbar = false;
+            ShowActivated = false;
+            Topmost = true;
+            Height = 4; Width = 1000;
+            canvas.RenderTransform = shelfSlide;
+            Content = new Grid { Children = { canvas, motionLayer } };
+            FontFamily = new FontFamily("Microsoft YaHei UI");
+            UseLayoutRounding = true;
+            int knownCount = store.Items.Count + store.Notes.Count;
+            store.Changed = delegate { int count = store.Items.Count + store.Notes.Count; bool deckChanged = count != knownCount; if (count > knownCount) page = 0; knownCount = count; Render(deckChanged); };
+            store.RemarkChanged = RefreshRemark;
+            canvas.MouseWheel += delegate(object sender, MouseWheelEventArgs e) { if (expanded) { ChangePage(e.Delta < 0 ? 1 : -1); e.Handled = true; } };
+            SourceInitialized += Initialize;
+            Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (memoEditor != null && !memoEditor.FlushChanges()) e.Cancel = true; if (remarkEditor != null && !remarkEditor.TrySave()) e.Cancel = true; };
+            Closed += Cleanup;
+            AllowDrop = true;
+            DragOver += delegate(object sender, DragEventArgs e) { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
+            Drop += delegate(object sender, DragEventArgs e)
+            {
+                if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+                foreach (string file in (string[])e.Data.GetData(DataFormats.FileDrop)) Import(file);
+                e.Handled = true;
+            };
+        }
+        static SolidColorBrush Brush(string hex) { var b = (SolidColorBrush)new BrushConverter().ConvertFromString(hex); b.Freeze(); return b; }
+        internal void Initialize(object sender, EventArgs e)
+        {
+            handle = new WindowInteropHelper(this).Handle;
+            source = HwndSource.FromHwnd(handle);
+            source.AddHook(Message);
+            Native.SetWindowLong(handle, -20, Native.GetWindowLong(handle, -20) | 0x08000000 | 0x00000080);
+
+            ClipboardRegistered = false; // Only direct capture results are collected.
+            HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x54); // Ctrl+Alt+T, no repeat.
+            RegisterCaptureShortcut();
+            screen = ScreenUnderPointer();
+            MakeTray();
+            if (Startup != null && !StartCollapsed)
+            {
+                string error;
+                if (!Startup.Initialize(out error)) tray.ShowBalloonTip(5000, "Start at login is off", error, Forms.ToolTipIcon.Warning);
+            }
+            store.SaveSettings(); // Persist disabled legacy collection preferences on upgrade.
+            captureDelay.Interval = TimeSpan.FromMilliseconds(80);
+            captureDelay.Tick += CaptureWhenReleased;
+
+            Position(false, screen);
+            SetupWatchers();
+
+            tick.Interval = TimeSpan.FromMilliseconds(80);
+            tick.Tick += Tick;
+            tick.Start();
+            if (demo) { pinned = true; Reveal(); }
+            else if (StartCollapsed) { Render(); }
+            else
+            {
+                Reveal();
+                keepUntil = DateTime.Now.AddSeconds(7);
+                if (!store.Settings.WelcomeShown)
+                {
+                    tray.ShowBalloonTip(4500, "Snapline is running", CaptureShortcutLabel + " captures a region. See the 'Tips' card right of the images. Start at login is in the tray menu.", Forms.ToolTipIcon.Info);
+                    store.Settings.WelcomeShown = true;
+                    store.SaveSettings();
+                }
+            }
+
+            if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
+            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + T is in use by another program. Open the shelf from the top edge or the tray.");
+        }
+        void StartupNotice(string message)
+        {
+            if (StartCollapsed) tray.ShowBalloonTip(5000, "Snapline", message, Forms.ToolTipIcon.Warning);
+            else Notify(message);
+        }
+        IntPtr Message(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled)
+        {
+            if (msg == Native.MouseActivate) { handled = true; return new IntPtr(3); }
+
+            if (msg == Native.Hotkey)
+            {
+                if (w.ToInt32() == 1) { Toggle(); handled = true; }
+                else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
+                {
+                    if (!editingShortcut) StartCapture(ShortcutCollects, ShortcutSpec.From(store.Settings).Key);
+                    handled = true;
+                }
+            }
+            if ((uint)msg == Native.ShowMessage) { ToggleFromTray(); handled = true; }
+            return IntPtr.Zero;
+        }
+
+        Forms.Screen ScreenUnderPointer()
+        {
+            var point = PointerPosition();
+            return point.HasValue ? Forms.Screen.FromPoint(new Drawing.Point(point.Value.X, point.Value.Y)) : (screen ?? Forms.Screen.PrimaryScreen);
+        }
+        double Dpi()
+        {
+            try { uint dpi = Native.GetDpiForWindow(handle); return dpi == 0 ? 1 : dpi / 96.0; }
+            catch (EntryPointNotFoundException) { return source.CompositionTarget.TransformToDevice.M11; }
+        }
+        void Position(bool open, Forms.Screen target)
+        {
+            bool changed = screen == null || screen.DeviceName != target.DeviceName;
+            screen = target;
+            var area = screen.WorkingArea;
+            double scale = Dpi();
+            int height = (int)Math.Ceiling((open ? ShelfHeight : 4) * scale);
+            Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, height, 0x0010);
+            // A monitor move can change the WPF presentation source's DPI.
+            scale = Dpi();
+            int updated = (int)Math.Ceiling((open ? ShelfHeight : 4) * scale);
+            if (height != updated) Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, updated, 0x0010);
+            shelfWidth = area.Width / scale;
+            canvas.Width = shelfWidth;
+            canvas.Height = open ? ShelfHeight : 4;
+            if (changed) page = 0;
+        }
+        internal Drawing.Rectangle IndicatorHitBounds()
+        {
+            if (indicator == null || expanded || !IsLoaded) return Drawing.Rectangle.Empty;
+            var first = indicator.PointToScreen(new System.Windows.Point(0, 0));
+            var last = indicator.PointToScreen(new System.Windows.Point(indicator.ActualWidth, indicator.ActualHeight));
+            return Drawing.Rectangle.FromLTRB((int)Math.Round(first.X), (int)Math.Round(first.Y), (int)Math.Round(last.X), (int)Math.Round(last.Y));
+        }
+        bool Fullscreen(Forms.Screen target = null)
+        {
+            IntPtr foreground = ForegroundWindow();
+            if (foreground == IntPtr.Zero || foreground == handle || dialogOpen || dragging) return false;
+            return HoverPolicy.Suppresses(foreground, (target ?? screen).Bounds);
+        }
+        void TryRevealFromIndicator()
+        {
+            if (expanded || collapsing || shuttingDown || dialogOpen || dragging || helpReading || capturePending ||
+                FlyingCount > 0 || DateTime.Now < hideUntil) return;
+            var point = PointerPosition();
+            if (!point.HasValue || !IndicatorHitBounds().Contains(point.Value.X, point.Value.Y)) return;
+            if (!demo && Fullscreen(ScreenUnderPointer())) return;
+            Reveal();
+        }
+        void Tick(object sender, EventArgs e)
+        {
+            if (shuttingDown) return;
+            ProcessPending();
+            if (dialogOpen || dragging || helpReading || capturePending) return;
+            var point = PointerPosition(); if (!point.HasValue) return;
+            var p = point.Value;
+            Forms.Screen under = Forms.Screen.FromPoint(new Drawing.Point(p.X, p.Y));
+            DateTime now = DateTime.Now;
+            if (FlyingCount > 0) { lastInside = now; return; }
+            if (!demo && Fullscreen(under))
+            {
+                if (expanded && screen.DeviceName == under.DeviceName) Collapse(false, false);
+                return;
+            }
+            if ((imageTip != null && imageTip.IsOpen) || (noteTip != null && noteTip.IsOpen)) { lastInside = now; return; }
+            if (collapsing) return;
+            if (!expanded) TryRevealFromIndicator();
+            bool inside = expanded && p.X >= screen.WorkingArea.Left && p.X < screen.WorkingArea.Right &&
+                p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + 266 * Dpi();
+            if (inside) lastInside = now;
+            if (expanded && !pinned && now > keepUntil && (now - lastInside).TotalMilliseconds > 700) Collapse(false);
+            if (toast != "" && now > toastUntil) { toast = ""; UpdateToast(); }
+        }
+        internal void Reveal()
+        {
+            bool was = expanded;
+            bool reversing = collapsing;
+            double offset = shelfSlide.Y;
+            int serial = ++transitionSerial; collapsing = false;
+            shelfSlide.BeginAnimation(TranslateTransform.YProperty, null);
+            var target = ScreenUnderPointer();
+            bool moved = screen == null || target.DeviceName != screen.DeviceName;
+            opening = !was || reversing || moved || Math.Abs(offset) > .1;
+            shelfSlide.Y = !was || moved ? HiddenShelfOffset : offset;
+            canvas.BeginAnimation(UIElement.OpacityProperty, null); canvas.Opacity = 1;
+            expanded = true;
+            if (!was || moved) Position(true, target);
+            if (Fullscreen() && !demo) { Collapse(false, false); return; }
+            lastInside = DateTime.Now;
+            if (!was || moved || renderDeferred) Render();
+            if (opening)
+            {
+                var slide = new DoubleAnimation(shelfSlide.Y, 0, TimeSpan.FromMilliseconds(300))
+                    { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+                slide.Completed += delegate { if (serial == transitionSerial && !shuttingDown) opening = false; };
+                shelfSlide.BeginAnimation(TranslateTransform.YProperty, slide);
+            }
+        }
+
+        void Collapse(bool manual, bool animate = true)
+        {
+            if (manual) { pinned = false; hideUntil = DateTime.Now.AddSeconds(1); }
+            CloseImagePreview(); CloseNotePreview(); if (helpTip != null) helpTip.IsOpen = false;
+            if (collapsing && animate) return;
+            int serial = ++transitionSerial;
+            opening = false;
+            Action finish = delegate {
+                if (serial != transitionSerial || shuttingDown) return;
+                collapsing = false; expanded = false;
+                Position(false, screen);
+                shelfSlide.BeginAnimation(TranslateTransform.YProperty, null); shelfSlide.Y = 0;
+                Render();
+            };
+            canvas.BeginAnimation(UIElement.OpacityProperty, null);
+            canvas.Opacity = 1;
+            if (!expanded || !animate) { finish(); return; }
+            collapsing = true;
+            var slide = new DoubleAnimation(shelfSlide.Y, HiddenShelfOffset, TimeSpan.FromMilliseconds(250))
+                { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+            slide.Completed += delegate { finish(); };
+            shelfSlide.BeginAnimation(TranslateTransform.YProperty, slide);
+        }
+        void Toggle()
+        {
+            if (expanded && !collapsing) Collapse(true);
+            else { pinned = true; Reveal(); }
+        }
+        internal void ToggleFromTray()
+        {
+            if (expanded && !collapsing) Collapse(true);
+            else
+            {
+                pinned = false;
+                Reveal();
+                // Allow time to move from the taskbar to the shelf before auto-hiding.
+                keepUntil = DateTime.Now.AddSeconds(3);
+            }
+        }
+        internal void TogglePin()
+        {
+            pinned = !pinned;
+            pinMenu.Checked = pinned;
+            Reveal();
+            if (!pinned) keepUntil = DateTime.Now.AddSeconds(3);
+        }
+        void Notify(string message)
+        {
+            toast = message.Length > 80 ? message.Substring(0, 80) : message;
+            toastUntil = DateTime.Now.AddSeconds(5);
+            keepUntil = toastUntil;
+            Reveal(); UpdateToast();
+        }
+
+        internal void Snapshot(string file)
+        {
+            canvas.Measure(new System.Windows.Size(shelfWidth, 270));
+            canvas.Arrange(new System.Windows.Rect(0, 0, shelfWidth, 270));
+            canvas.UpdateLayout();
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(shelfWidth), 270, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(canvas);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using (var stream = System.IO.File.Create(file)) encoder.Save(stream);
+        }
+        void Cleanup(object sender, EventArgs e)
+        {
+            shuttingDown = true;
+            store.RemarkChanged = null;
+            transitionSerial++; shelfSlide.BeginAnimation(TranslateTransform.YProperty, null);
+            ClearHoverEffects(); CloseFallingPapers();
+            tick.Stop(); captureDelay.Stop();
+            CloseImagePreview(); CloseNotePreview();
+            if (helpTip != null) helpTip.IsOpen = false;
+
+            if (inboxWatcher != null) inboxWatcher.Dispose();
+            Native.UnregisterHotKey(handle, 1); Native.UnregisterHotKey(handle, 2); Native.UnregisterHotKey(handle, 3);
+            if (source != null) source.RemoveHook(Message);
+            if (tray != null) { tray.Visible = false; tray.Dispose(); }
+            store.Save(); store.SaveSettings();
+        }
+    }
+}

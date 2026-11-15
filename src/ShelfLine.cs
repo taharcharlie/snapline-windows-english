@@ -1,0 +1,508 @@
+// Snapline: a local screenshot shelf for Windows. MIT License.
+// The line itself: layout, rope, cards, previews and the Tips card.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using Forms = System.Windows.Forms;
+using Drawing = System.Drawing;
+using Path = System.IO.Path;
+
+namespace Snapline
+{
+    sealed partial class Shelf
+    {
+        ToolTip HelpPopup()
+        {
+            var content = new StackPanel { Width = 278 };
+            var title = Text("Snapline · Tips", 13, "#FF27668F");
+            title.FontWeight = FontWeights.SemiBold; title.Margin = new Thickness(0, 0, 0, 10);
+            content.Children.Add(title);
+            AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture a region and hang it" : "Set a capture shortcut in the tray menu");
+            if (!CaptureHotkeyRegistered && store.Settings.CaptureShortcut != "None")
+                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = 10, Foreground = Brush("#FF9C6A3B"), Margin = new Thickness(0, 0, 0, 7) });
+            AddHelpRow(content, "Scissors button", "Copies only, does not hang");
+            AddHelpRow(content, "Touch the blue line", "Opens the shelf");
+            AddHelpRow(content, "Slip under an image", "Add or edit its caption");
+            AddHelpRow(content, "Ctrl + Alt + T", "Pin open / close");
+            AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
+            AddHelpRow(content, "Double-click a note", "Edit text and paper; right-click to copy or delete");
+            AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
+            AddHelpRow(content, "Click / double-click", "Copy image / open it");
+            AddHelpRow(content, "Drag out / long-press", "Drop into a folder / edit in Paint");
+            AddHelpRow(content, "Right-click an image", "Save as, remove and more");
+            var footer = Text("Only shortcut captures are collected; customise in the tray", 10, "#FF81909D");
+            footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
+            if (store.Settings.CaptureShortcut == "CtrlB")
+            {
+                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in the tray", 10, "#FF9C6A3B");
+                shortcutNote.Margin = new Thickness(0, 5, 0, 0); content.Children.Add(shortcutNote);
+            }
+            var body = new Border { Child = content, Padding = new Thickness(14), CornerRadius = new CornerRadius(10),
+                Background = Brush("#FFF9FCFF"), BorderBrush = Brush("#FFB9E2FA"), BorderThickness = new Thickness(1) };
+            var tip = new ToolTip { Content = body, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Padding = new Thickness(0), HasDropShadow = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                HorizontalOffset = -67, VerticalOffset = 7, FontFamily = FontFamily };
+            tip.Opened += delegate { helpReading = true; };
+            tip.Closed += delegate { helpReading = false; lastInside = DateTime.Now; };
+            return tip;
+        }
+        void AddHelpRow(StackPanel content, string key, string action)
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var label = Text(key, 10.5, "#FF347DA7"); label.TextWrapping = TextWrapping.Wrap; label.Margin = new Thickness(0, 0, 8, 0);
+            var detail = new TextBlock { Text = action, FontSize = 10.5, Foreground = Brush("#FF596775"), TextWrapping = TextWrapping.Wrap };
+            Grid.SetColumn(detail, 1); row.Children.Add(label); row.Children.Add(detail); content.Children.Add(row);
+        }
+        MenuItem Item(string text, Action action)
+        {
+            var item = new MenuItem { Header = text };
+            item.Click += delegate { action(); };
+            return item;
+        }
+        ContextMenu ShotMenu(Shot shot)
+        {
+            var menu = new ContextMenu();
+            menu.Items.Add(Item("Copy image", delegate { Copy(shot); }));
+            menu.Items.Add(Item("Copy PNG file", delegate { CopyFile(shot); }));
+            menu.Items.Add(Item("Open image", delegate { Launch(store.FullPath(shot)); }));
+            menu.Items.Add(Item(String.IsNullOrWhiteSpace(shot.Remark) ? "Add caption…" : "Edit caption…", delegate { menu.IsOpen = false; dialogOpen = false; Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(delegate { EditRemark(shot, null); })); }));
+            menu.Items.Add(Item("Edit in Paint", delegate { Edit(shot); }));
+            menu.Items.Add(Item("Save as…", delegate { SaveAs(shot); }));
+            menu.Items.Add(Item("Show in folder", delegate { Process.Start("explorer.exe", "/select,\"" + store.FullPath(shot) + "\""); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item("Remove from shelf", delegate { RemoveShot(shot); }));
+            menu.Opened += delegate { CloseImagePreview(); dialogOpen = true; };
+            menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; };
+            return menu;
+        }
+        TextBlock Text(string text, double size, string color)
+        {
+            return new TextBlock { Text = text, FontSize = size, Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
+        }
+        void Place(UIElement element, double x, double y) { Canvas.SetLeft(element, x); Canvas.SetTop(element, y); canvas.Children.Add(element); }
+        Button Tool(string text, string tip, Action click)
+        {
+            var button = new Button { Content = text, ToolTip = tip, Height = 28, MinWidth = 28, Padding = new Thickness(8, 2, 8, 2), Background = Brush("#CCF3F5F8"), Foreground = Brush("#FF727B89"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand, FontSize = 12, Focusable = false };
+            AutomationProperties.SetName(button, tip);
+            button.Click += delegate { click(); };
+            return button;
+        }
+        // Independent cards hang from a thin, gently sagging line. Empty space stays transparent.
+        int CardsPerPage()
+        {
+            return Math.Max(1, (int)((shelfWidth - 112) / 218) - 1); // Reserve one hanging slot for help.
+        }
+        int VisibleCardCount()
+        {
+            return Math.Min(CardsPerPage(), Math.Max(0, Deck().Count - page * CardsPerPage()));
+        }
+        double HangingCenter(int index, int imageCount)
+        {
+            // The images and help card form a single centered group.
+            return (shelfWidth - (imageCount + 1) * 218) / 2 + (index + 0.5) * 218;
+        }
+        List<System.Windows.Point> RopeNodes()
+        {
+            var nodes = new List<System.Windows.Point>();
+            nodes.Add(new System.Windows.Point(24, 18));
+            int imageCount = VisibleCardCount(), hangingCount = imageCount + 1;
+            double sag = 42 + 2 * Math.Min(hangingCount, 4);
+            for (int i = 0; i < hangingCount; i++)
+            {
+                double x = HangingCenter(i, imageCount);
+                double loadPosition = (i + 1.0) / (hangingCount + 1.0);
+                nodes.Add(new System.Windows.Point(x, 18 + sag * Math.Sin(Math.PI * loadPosition)));
+            }
+            nodes.Add(new System.Windows.Point(shelfWidth - 24, 18));
+            return nodes;
+        }
+        static double StrandSag(System.Windows.Point a, System.Windows.Point b)
+        {
+            // A little slack between pegs, with the larger dip caused by the hanging photos.
+            return Math.Min(8, Math.Max(1.5, (b.X - a.X) / 80));
+        }
+        double RopeY(double x)
+        {
+            var nodes = RopeNodes();
+            for (int i = 1; i < nodes.Count; i++)
+            {
+                var a = nodes[i - 1]; var b = nodes[i];
+                if (x > b.X && i < nodes.Count - 1) continue;
+                double t = Math.Max(0, Math.Min(1, (x - a.X) / Math.Max(1, b.X - a.X)));
+                return a.Y + (b.Y - a.Y) * t + 4 * StrandSag(a, b) * t * (1 - t);
+            }
+            return 18;
+        }
+
+        void ChangePage(int step)
+        {
+            int lastPage = Math.Max(0, (Deck().Count - 1) / CardsPerPage());
+            int next = Math.Max(0, Math.Min(lastPage, page + step));
+            if (next == page) return;
+            page = next; lastInside = DateTime.Now; Render();
+        }
+        internal void Render(bool force = false)
+        {
+            if (collapsing || (remarkEditor != null && !force)) { renderDeferred = true; return; }
+            renderDeferred = false;
+            CloseImagePreview(); CloseNotePreview();
+            if (helpTip != null) helpTip.IsOpen = false;
+            ClearHoverEffects();
+            canvas.Children.Clear(); indicator = null; toastElement = null;
+            if (!expanded) motionLayer.Children.Clear();
+            if (!expanded)
+            {
+                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = new CornerRadius(1), Background = Brush("#D671C6FA"), ToolTip = "Touch this blue line to open · See the 'Tips' card for help" };
+                indicator = mark;
+                mark.MouseEnter += delegate { TryRevealFromIndicator(); };
+                Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.IndicatorWidth) / 2), 0);
+                return;
+            }
+            page = Math.Min(page, Math.Max(0, (Deck().Count - 1) / CardsPerPage()));
+            double left = 24, right = shelfWidth - 24;
+            var nodes = RopeNodes();
+            var geometry = new StreamGeometry();
+            using (var drawing = geometry.Open())
+            {
+                drawing.BeginFigure(nodes[0], false, false);
+                for (int i = 1; i < nodes.Count; i++)
+                {
+                    var a = nodes[i - 1]; var b = nodes[i];
+                    double dx = b.X - a.X, dy = b.Y - a.Y;
+                    double slack = StrandSag(a, b) * 4 / 3;
+                    drawing.BezierTo(new System.Windows.Point(a.X + dx / 3, a.Y + dy / 3 + slack),
+                        new System.Windows.Point(a.X + dx * 2 / 3, a.Y + dy * 2 / 3 + slack),
+                        b, true, false);
+                }
+            }
+
+            geometry.Freeze();
+            canvas.Children.Add(new System.Windows.Shapes.Path
+            {
+                Data = geometry, Stroke = Brush("#8FEAF8FF"), StrokeThickness = 3.5,
+                IsHitTestVisible = false, Effect = new DropShadowEffect { BlurRadius = 2, ShadowDepth = 1, Opacity = 0.12 }
+            });
+            canvas.Children.Add(new System.Windows.Shapes.Path
+            {
+                Data = geometry, Stroke = Brush("#FF72C7FA"), StrokeThickness = 1.6,
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round
+            });
+            Place(new Ellipse { Width = 4, Height = 4, Fill = Brush("#FFA1DDFC"), IsHitTestVisible = false }, left - 2, 16);
+            Place(new Ellipse { Width = 4, Height = 4, Fill = Brush("#FFA1DDFC"), IsHitTestVisible = false }, right - 2, 16);
+            int perPage = CardsPerPage();
+            var deck = Deck();
+            int maxPage = Math.Max(0, (deck.Count - 1) / perPage);
+            page = Math.Min(page, maxPage);
+            var shown = deck.Skip(page * perPage).Take(perPage).ToArray();
+            for (int i = 0; i < shown.Length; i++)
+            {
+                double center = HangingCenter(i, shown.Length);
+                var memo = shown[i] as Memo;
+                if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, i);
+                else MakeCard((Shot)shown[i], center, RopeY(center) + 15, i);
+            }
+            if (maxPage > 0)
+            {
+                Place(Tool("‹", "Previous page (or scroll)", delegate { ChangePage(-1); }), 34, 29);
+                Place(Tool("›", "Next page (or scroll)", delegate { ChangePage(1); }), shelfWidth - 62, 29);
+            }
+            double helpCenter = HangingCenter(shown.Length, shown.Length);
+            MakeHelpCard(helpCenter, RopeY(helpCenter) + 15, shown.Length);
+            UpdateToast();
+        }
+        void UpdateToast()
+        {
+            if (toastElement != null) canvas.Children.Remove(toastElement);
+            toastElement = null;
+            if (!expanded) return;
+            if (toast != "")
+            {
+                var note = Text(toast, 11, "#FF525F6C");
+                var feedback = new Border
+                {
+                    Child = note, Padding = new Thickness(12, 6, 12, 6),
+                    CornerRadius = new CornerRadius(12), Background = Brush("#EAF7F8FA"),
+                    BorderBrush = Brush("#88D3D7DE"), BorderThickness = new Thickness(0.5),
+                    IsHitTestVisible = false, Tag = "ShelfFeedback"
+                };
+                feedback.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                toastElement = feedback;
+                Place(feedback, (shelfWidth - feedback.DesiredSize.Width) / 2, 242);
+            }
+        }
+
+        void MakeHelpCard(double center, double y, int index)
+        {
+            const double width = 172, height = 148;
+            double lean = 1.8;
+            var swing = new RotateTransform(lean, width / 2, -15);
+            var grid = new Grid { Width = width, Height = height, RenderTransform = swing, Cursor = Cursors.Hand };
+            AutomationProperties.SetName(grid, "Tips (hover to view)");
+            var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
+            var title = Text("Tips", 16, "#FF307FAF");
+            title.FontWeight = FontWeights.SemiBold; title.HorizontalAlignment = HorizontalAlignment.Center;
+            content.Children.Add(title);
+            var subtitle = Text("Hover for help", 11, "#FF80929F");
+            subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4, 0, 0);
+            content.Children.Add(subtitle);
+            var capture = Tool("✂ Capture (copy only)", "Copies only; press Ctrl + B to hang automatically", StartCapture);
+            capture.FontSize = 11; capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
+            capture.Background = Brush("#FFE4F4FF"); capture.Foreground = Brush("#FF3C89B8");
+            capture.ToolTip = null; content.Children.Add(capture);
+            var addNote = Tool("＋ Note", "New note", NewNote);
+            addNote.FontSize = 12; addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
+            addNote.Background = Brush("#FFFFF3C9"); addNote.Foreground = Brush("#FF9D8345");
+            System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
+            content.Children.Add(addNote);
+            grid.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(5), Background = Brush("#F5F6FBFF"),
+                BorderBrush = Brush("#E5C3E7FB"), BorderThickness = new Thickness(1),
+                Child = content, Effect = new DropShadowEffect { BlurRadius = 10, Opacity = 0.16, ShadowDepth = 3 }
+            });
+            AddHangingPeg(grid);
+            helpTip = HelpPopup();
+            helpTip.PlacementTarget = grid;
+            grid.ToolTip = helpTip;
+            RegisterHoverPreview(grid);
+            ToolTipService.SetInitialShowDelay(grid, 220);
+            ToolTipService.SetShowDuration(grid, 60000);
+            var breeze = new DoubleAnimation(lean - 0.6, lean + 0.6, TimeSpan.FromSeconds(3.8))
+            {
+                AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+            };
+            Timeline.SetDesiredFrameRate(breeze, 24);
+            RegisterHangingMotion(grid, swing, breeze);
+            grid.MouseEnter += delegate { if (!hoverEffectsPaused) SetHangingAnimation(swing, new DoubleAnimation(0, TimeSpan.FromMilliseconds(180))); };
+            grid.MouseLeave += delegate { if (!hoverEffectsPaused) SetHangingAnimation(swing, breeze); };
+            grid.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; if (HoverPreviewAllowed) helpTip.IsOpen = !helpTip.IsOpen; };
+            Place(grid, center - width / 2, y);
+        }
+        void AddHangingPeg(Grid grid)
+        {
+            var pin = new Border
+            {
+                Width = 6, Height = 22, CornerRadius = new CornerRadius(2), Tag = "HangingPeg",
+                Background = new LinearGradientBrush(Color.FromRgb(236, 238, 243), Color.FromRgb(170, 175, 190), 0),
+                BorderBrush = Brush("#D8FFFFFF"), BorderThickness = new Thickness(0.5),
+                VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, -20, 0, 0), IsHitTestVisible = false,
+                Effect = new DropShadowEffect { BlurRadius = 2, ShadowDepth = 1, Opacity = 0.16 }
+            };
+            grid.Children.Add(pin);
+            grid.Children.Add(new Border
+            {
+                Width = 1, Height = 14, Background = Brush("#668A909D"), Tag = "HangingPeg",
+                VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, -16, 0, 0), IsHitTestVisible = false
+            });
+        }
+
+        void CloseImagePreview()
+        {
+            var current = imageTip;
+            imageTip = null;
+            if (current != null) current.IsOpen = false;
+        }
+        ToolTip ImagePopup(Shot shot, FrameworkElement target)
+        {
+            double dpi = Dpi();
+            double maxWidth = Math.Max(100, Math.Min(760, screen.WorkingArea.Width / dpi - 64));
+            double remarkBudget = String.IsNullOrWhiteSpace(shot.Remark) ? 0 : Math.Max(48, Math.Min(140, screen.WorkingArea.Height / dpi / 5));
+            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300 - remarkBudget));
+            double aspect = shot.Thumb.PixelWidth / (double)Math.Max(1, shot.Thumb.PixelHeight);
+            double width = Math.Min(maxWidth, maxHeight * aspect), height = width / aspect;
+            double bodyWidth = Math.Max(180, width);
+            var preview = new Image { Width = width, Height = height, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center };
+            var content = new StackPanel { Width = bodyWidth };
+            ScrollViewer remarkScroll = null;
+            var title = Text("Preview", 12, "#FF387DA6");
+            title.Margin = new Thickness(0, 0, 0, 8); content.Children.Add(title);
+            content.Children.Add(new Border { Child = preview, Background = Brush("#FFF0F4F8"), CornerRadius = new CornerRadius(4), ClipToBounds = true });
+            if (remarkBudget > 0)
+            {
+                var remarkText = new TextBlock { Text = shot.Remark, FontSize = 13, LineHeight = 20, TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("#FF6D6042") };
+                AutomationProperties.SetAutomationId(remarkText, "PreviewRemark");
+                var scroll = new ScrollViewer { Content = remarkText, MaxHeight = remarkBudget, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+                remarkScroll = scroll;
+                content.Children.Add(new Border { Child = scroll, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 9, 0, 0),
+                    CornerRadius = new CornerRadius(5), Background = Brush("#FFFFF7DD"), BorderBrush = Brush("#FFEBDDB6"), BorderThickness = new Thickness(1) });
+            }
+            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to open · Drag out" + (remarkBudget > 0 ? " · Scroll for long captions" : ""), FontSize = 11,
+                Foreground = Brush("#FF82909B"), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
+            var tip = new ToolTip
+            {
+                Content = new Border { Child = content, Padding = new Thickness(10), CornerRadius = new CornerRadius(9),
+                    Background = Brush("#FFF9FCFF"), BorderBrush = Brush("#FFC1E4F8"), BorderThickness = new Thickness(1) },
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0),
+                HasDropShadow = true, IsHitTestVisible = false, FontFamily = FontFamily,
+                Tag = remarkScroll,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, PlacementTarget = target,
+                HorizontalOffset = (target.Width - bodyWidth - 22) / 2, VerticalOffset = 10
+            };
+            tip.Opened += delegate
+            {
+                if (!HoverPreviewAllowed ||
+                    Mouse.LeftButton == MouseButtonState.Pressed || !store.Items.Contains(shot)) { tip.IsOpen = false; return; }
+                try
+                {
+                    CloseImagePreview(); CloseNotePreview();
+                    if (helpTip != null) helpTip.IsOpen = false;
+                    preview.Source = Store.Preview(store.FullPath(shot), (int)Math.Ceiling(maxWidth * dpi), (int)Math.Ceiling(maxHeight * dpi), aspect);
+                    imageTip = tip;
+                }
+                catch (Exception ex) { tip.IsOpen = false; store.Log("Preview image", ex); }
+            };
+            tip.Closed += delegate
+            {
+                preview.Source = null; // Release the enlarged bitmap as soon as the pointer leaves.
+                if (Object.ReferenceEquals(imageTip, tip)) imageTip = null;
+                lastInside = DateTime.Now;
+            };
+            return tip;
+        }
+        void MakeCard(Shot shot, double center, double y, int index)
+        {
+            double imageWidth = Math.Max(1, shot.Thumb.PixelWidth), imageHeight = Math.Max(1, shot.Thumb.PixelHeight);
+            double scale = Math.Min(192 / imageWidth, 124 / imageHeight);
+            double width = Math.Max(70, imageWidth * scale) + 7;
+            double height = Math.Max(54, imageHeight * scale) + 7;
+            double lean = new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5];
+            double cardWidth = width;
+            var swing = new RotateTransform(lean, cardWidth / 2, -15);
+            var card = new Grid { Width = cardWidth, Height = height + RemarkStripHeight, RenderTransform = swing, Tag = shot };
+            card.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(5), Background = Brush("#E8F5FF"), IsHitTestVisible = false,
+                Effect = new DropShadowEffect { Color = MemoTheme.Hex("#354155"), BlurRadius = 10, Opacity = 0.18, ShadowDepth = 3 }
+            });
+            var grid = new Grid
+            {
+                Width = width, Height = height, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+                Cursor = Cursors.Hand
+            };
+            AutomationProperties.SetName(grid, "Hung image " + shot.Label);
+            AutomationProperties.SetAutomationId(grid, "ShotCard-" + shot.File);
+            grid.ToolTip = ImagePopup(shot, grid);
+            RegisterHoverPreview(grid);
+            ToolTipService.SetInitialShowDelay(grid, 300);
+            ToolTipService.SetBetweenShowDelay(grid, 100);
+            ToolTipService.SetShowDuration(grid, 60000);
+            grid.PreviewMouseDown += delegate { CloseImagePreview(); };
+            grid.PreviewMouseWheel += delegate(object sender, MouseWheelEventArgs e) {
+                if (imageTip == null || !imageTip.IsOpen || imageTip.PlacementTarget != grid) return;
+                var scroll = imageTip.Tag as ScrollViewer;
+                if (scroll != null) { scroll.ScrollToVerticalOffset(scroll.VerticalOffset - e.Delta / 3.0); e.Handled = true; }
+            };
+            var frame = new Border
+            {
+                CornerRadius = new CornerRadius(5, 5, 0, 0), Background = Brush("#F7F8FB"),
+                BorderBrush = Brush("#C6E2F5"), BorderThickness = new Thickness(1, 1, 1, 0),
+                Padding = new Thickness(2.5)
+            };
+            frame.Child = new Border
+            {
+                CornerRadius = new CornerRadius(3), ClipToBounds = true,
+                Child = new Image { Source = shot.Thumb, Stretch = Stretch.Uniform }
+            };
+            grid.Children.Add(frame);
+            AddHangingPeg(grid);
+            var remove = new Button
+            {
+                Content = "×", Width = 19, Height = 19, FontSize = 13,
+                Background = Brush("#C948505F"), Foreground = Brushes.White, BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 3, 0), Focusable = false, ToolTip = "Remove saved copy",
+                Opacity = 0, IsHitTestVisible = false, Tag = "DeleteButton"
+            };
+            AutomationProperties.SetName(remove, "Remove " + shot.Label);
+            remove.PreviewMouseDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; RemoveShot(shot); };
+            grid.Children.Add(remove);
+            var breeze = new DoubleAnimation(lean - 0.65, lean + 0.65, TimeSpan.FromSeconds(3.4 + (index % 3) * 0.6))
+            {
+                AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+            };
+            Timeline.SetDesiredFrameRate(breeze, 24);
+            RegisterHangingMotion(card, swing, breeze);
+            card.MouseEnter += delegate
+            {
+                if (hoverEffectsPaused) return;
+                remove.IsHitTestVisible = true;
+                remove.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(120)));
+                SetHangingAnimation(swing, new DoubleAnimation(0, TimeSpan.FromMilliseconds(180)));
+            };
+            grid.MouseLeave += delegate { CloseImagePreview(); };
+            card.MouseLeave += delegate
+            {
+                CloseImagePreview(); CloseNotePreview();
+                if (hoverEffectsPaused) return;
+                remove.IsHitTestVisible = false;
+                remove.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(150)));
+                Timeline.SetDesiredFrameRate(breeze, 24);
+                SetHangingAnimation(swing, breeze);
+            };
+            grid.ContextMenu = ShotMenu(shot);
+            bool down = false, moved = false, held = false;
+            System.Windows.Point start = new System.Windows.Point();
+            var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
+            hold.Tick += delegate { hold.Stop(); if (down && !moved) { held = true; down = false; grid.ReleaseMouseCapture(); Edit(shot); } };
+            grid.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
+            {
+                e.Handled = true;
+                if (e.ClickCount == 2) { hold.Stop(); down = false; grid.ReleaseMouseCapture(); Launch(store.FullPath(shot)); return; }
+                start = e.GetPosition(grid); down = true; moved = held = false; grid.CaptureMouse(); hold.Start();
+            };
+            grid.MouseMove += delegate(object sender, MouseEventArgs e)
+            {
+                if (!down || moved || held || e.LeftButton != MouseButtonState.Pressed) return;
+                var p = e.GetPosition(grid);
+                if (Math.Abs(p.X - start.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(p.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+                moved = true; down = false; hold.Stop(); grid.ReleaseMouseCapture();
+                try
+                {
+                    dragging = true;
+                    var data = new DataObject(DataFormats.FileDrop, new[] { store.FullPath(shot) });
+                    var result = DragDrop.DoDragDrop(grid, data, DragDropEffects.Copy | DragDropEffects.Move);
+                    if (result == DragDropEffects.Move || !System.IO.File.Exists(store.FullPath(shot))) store.Remove(shot);
+                }
+                catch (Exception ex) { store.Log("Drag image", ex); Notify("Drag did not complete. Right-click and use Save as."); }
+                finally { dragging = false; lastInside = DateTime.Now; }
+            };
+            grid.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e)
+            {
+                hold.Stop(); grid.ReleaseMouseCapture();
+                if (down && !moved && !held) Copy(shot);
+                down = false; e.Handled = true;
+            };
+            grid.LostMouseCapture += delegate { hold.Stop(); };
+            card.Children.Add(grid);
+            card.Children.Add(RemarkStrip(shot, cardWidth, height));
+            Place(card, center - cardWidth / 2, y);
+        }
+    }
+}
