@@ -58,10 +58,14 @@ namespace Snapline
             {
                 int index = shot != null ? store.Items.IndexOf(shot) : store.Notes.IndexOf(memo);
                 if (index < 0) return;
-                FinishUndo(); // Only the latest removal can be undone.
+                var previous = undoItem as Shot;
                 Action commit = delegate { if (shot != null) store.Detach(shot); else store.RemoveNote(memo); };
                 if (fall) RemoveWithFlight(HangingElement(item), commit); else commit();
-                undoItem = item; undoIndex = index;
+                bool gone = shot != null ? !store.Items.Contains(shot) : !store.Notes.Contains(memo);
+                if (!gone) { Notify("Could not remove. The card is kept; try again shortly."); return; }
+                // Only the latest removal can be undone; the one before it becomes permanent now that this one succeeded.
+                if (previous != null) store.Discard(previous);
+                undoItem = item; undoIndex = index; pegGuardUntil = DateTime.Now.AddMilliseconds(450);
                 undoUntil = DateTime.Now.AddSeconds(7); keepUntil = undoUntil; lastInside = DateTime.Now;
                 toast = ""; UpdateToast();
             }
@@ -70,14 +74,22 @@ namespace Snapline
         internal void Undo()
         {
             object item = undoItem; if (item == null) return;
-            undoItem = null;
             try
             {
                 var shot = item as Shot;
                 if (shot != null) store.Reattach(shot, undoIndex); else store.RestoreNote((Memo)item, undoIndex);
+                undoItem = null; // Only once the card is really back.
                 keepUntil = DateTime.Now.AddSeconds(3);
+                // Show the restored card even when it came from further along the line.
+                int at = Deck().FindIndex(x => Object.ReferenceEquals(x, item));
+                if (at >= 0) { focus = at; Render(true); }
             }
-            catch (Exception ex) { store.Log("Undo removal", ex); Notify("Could not bring the card back: " + ex.Message); }
+            catch (Exception ex)
+            {
+                // Keep the card recoverable and give time for another try.
+                undoUntil = DateTime.Now.AddSeconds(20); keepUntil = undoUntil;
+                store.Log("Undo removal", ex); Notify("Could not bring the card back yet. Try Undo again.");
+            }
             UpdateToast();
         }
         // The removal becomes permanent: a removed screenshot's saved copy is deleted now.
@@ -94,8 +106,10 @@ namespace Snapline
         }
 
         // ---- the peg ----
+        DateTime pegGuardUntil;
         void DressPeg(Panel card, object item)
         {
+            bool pressed = false;
             bool kept = IsKept(item);
             if (kept)
                 foreach (var part in FlightDecorations(card).OfType<Border>().Where(x => Object.Equals(x.Tag, "HangingPeg") && x.Width > 2))
@@ -107,13 +121,15 @@ namespace Snapline
                 VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -24, 0, 0),
                 ToolTip = kept ? "Kept: stays on the line" : "Unclip to delete (Undo appears)"
             };
-            hit.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; };
-            hit.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; RemoveWithUndo(item); };
+            hit.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; pressed = e.ClickCount == 1 && DateTime.Now > pegGuardUntil; };
+            hit.MouseLeave += delegate { pressed = false; };
+            hit.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; if (!pressed) return; pressed = false; RemoveWithUndo(item); };
             card.Children.Add(hit);
         }
 
         // ---- click, reorder, pull off ----
         List<LineCard> reorderSlots;
+        List<object> reorderDeck;
         bool binDrop;
         Border binFace;
         void AttachGestures(FrameworkElement card, object item)
@@ -145,9 +161,17 @@ namespace Snapline
                     hold.Stop();
                     // Downwards pulls the card off the rope; sideways slides it along.
                     if (dy > Math.Abs(dx)) { down = false; card.ReleaseMouseCapture(); Unclip(card, item); return; }
-                    reorder = true; BeginReorder(card);
+                    if (!BeginReorder(card)) { down = false; card.ReleaseMouseCapture(); return; }
+                    reorder = true;
                 }
-                if (dy > 70) { down = false; reorder = false; card.ReleaseMouseCapture(); EndReorder(card, false); Unclip(card, item); return; }
+                if (dy > 70)
+                {
+                    down = false; reorder = false; card.ReleaseMouseCapture(); EndReorder(card, false);
+                    // The line was redrawn, so pull off the card that is on it now.
+                    var live = HangingElement(item);
+                    if (live != null) Unclip(live, item);
+                    return;
+                }
                 DragReorder(card, p.X - grabX);
             };
             card.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e)
@@ -156,16 +180,20 @@ namespace Snapline
                 if (wasReorder) { EndReorder(card, true); return; }
                 if (wasDown && !held) { if (shot != null) Copy(shot); else CopyNote(memo); }
             };
-            card.LostMouseCapture += delegate { hold.Stop(); if (reorder) { reorder = false; down = false; EndReorder(card, true); } };
+            card.LostMouseCapture += delegate { hold.Stop(); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
         }
-        void BeginReorder(FrameworkElement card)
+        bool BeginReorder(FrameworkElement card)
         {
+            // Not while a redraw is waiting (caption editor open, line closing): the cards on screen may be out of date.
+            if (remarkEditor != null || collapsing || renderDeferred) return false;
             reorderSlots = lineCards.OrderBy(x => x.Index).ToList();
+            reorderDeck = Deck();
             rollingUntil = DateTime.MaxValue; // No focus changes from cards sliding under the pointer.
             Panel.SetZIndex(card, 50);
             double left = Canvas.GetLeft(card), top = Canvas.GetTop(card);
             card.BeginAnimation(Canvas.LeftProperty, null); card.BeginAnimation(Canvas.TopProperty, null);
             Canvas.SetLeft(card, left); Canvas.SetTop(card, top);
+            return true;
         }
         void DragReorder(FrameworkElement card, double left)
         {
@@ -191,10 +219,13 @@ namespace Snapline
         void EndReorder(FrameworkElement card, bool commit)
         {
             var slots = reorderSlots; if (slots == null) return;
-            reorderSlots = null; rollingUntil = DateTime.Now;
+            var started = reorderDeck;
+            reorderSlots = null; reorderDeck = null; rollingUntil = DateTime.Now;
             if (commit && slots.Count > 0)
             {
                 var deck = Deck();
+                // A card was added or removed during the drag: the positions no longer mean what they did.
+                if (started == null || deck.Count != started.Count || !deck.Zip(started, (a, b) => Object.ReferenceEquals(a, b)).All(x => x)) { Render(true); return; }
                 var indexes = slots.Select(x => x.Index).ToList();
                 bool valid = indexes.All(x => x >= 0 && x < deck.Count), moved = !indexes.SequenceEqual(indexes.OrderBy(x => x));
                 if (valid && moved)
@@ -230,9 +261,9 @@ namespace Snapline
                 card.Opacity = 0.25; ShowBin(true);
                 follow = delegate { if (ghost != null) ghost.Follow(); };
                 card.GiveFeedback += follow;
-                var result = DragDrop.DoDragDrop(card, data, shot != null ? DragDropEffects.Copy | DragDropEffects.Move : DragDropEffects.Copy);
+                var result = DragDrop.DoDragDrop(card, data, shot != null && !shot.Kept ? DragDropEffects.Copy | DragDropEffects.Move : DragDropEffects.Copy);
                 if (binDrop) RemoveWithUndo(item, false);
-                else if (shot != null && (result == DragDropEffects.Move || !System.IO.File.Exists(store.FullPath(shot)))) store.Remove(shot);
+                else if (shot != null && ((result == DragDropEffects.Move && !shot.Kept) || !System.IO.File.Exists(store.FullPath(shot)))) store.Remove(shot);
             }
             catch (Exception ex) { store.Log("Drag card", ex); Notify("Drag did not complete. Right-click the card for other ways to copy it."); }
             finally

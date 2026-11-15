@@ -76,7 +76,7 @@ namespace Snapline
                 dialogOpen = true;
                 try
                 {
-                    if (Forms.MessageBox.Show("Clear the " + store.Items.Count + " saved copies? Original screenshots are not deleted.", "Snapline", Forms.MessageBoxButtons.YesNo, Forms.MessageBoxIcon.Question) == Forms.DialogResult.Yes) store.Clear();
+                    if (Forms.MessageBox.Show("Clear the " + store.Items.Count(x => !x.Kept) + " saved copies? Kept cards stay. Original screenshots are not deleted.", "Snapline", Forms.MessageBoxButtons.YesNo, Forms.MessageBoxIcon.Question) == Forms.DialogResult.Yes) store.Clear();
                 }
                 finally { dialogOpen = false; }
             });

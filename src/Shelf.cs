@@ -261,7 +261,7 @@ namespace Snapline
             if (shuttingDown) return;
             // Typing into an editor or a dialog must never be taken over by the line keys.
             if (lineKeys && (dialogOpen || memoEditor != null || remarkEditor != null || editingShortcut)) SetLineKeys(false);
-            ProcessPending();
+            if (!dragging && reorderSlots == null) ProcessPending();
             // Checked before the early exits below, so an open tooltip cannot keep a removed card recoverable forever.
             if (undoItem != null && !dragging && DateTime.Now > undoUntil) { FinishUndo(); UpdateToast(); }
             if (dialogOpen || dragging || helpReading || capturePending) return;

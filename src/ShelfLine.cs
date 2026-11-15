@@ -198,7 +198,7 @@ namespace Snapline
             if (on == lineKeys || handle == IntPtr.Zero) return;
             lineKeys = on;
             for (int i = 0; i < LineKeyCodes.Length; i++)
-                if (on) Native.RegisterHotKey(handle, 20 + i, 0, LineKeyCodes[i]); else Native.UnregisterHotKey(handle, 20 + i);
+                if (on) Native.RegisterHotKey(handle, 20 + i, i < 2 ? 0u : 0x4000u, LineKeyCodes[i]); else Native.UnregisterHotKey(handle, 20 + i);
         }
         void LineKey(int id)
         {
@@ -332,6 +332,7 @@ namespace Snapline
             if (toastElement != null) canvas.Children.Remove(toastElement);
             toastElement = null;
             if (!expanded) return;
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
             if (undoItem != null)
             {
                 var words = new TextBlock { FontSize = Theme.Size(12), Foreground = Brush(Theme.Text), VerticalAlignment = VerticalAlignment.Center };
@@ -344,10 +345,7 @@ namespace Snapline
                 };
                 notice.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; };
                 notice.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; Undo(); };
-                notice.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
-                toastElement = notice;
-                Place(notice, (shelfWidth - notice.DesiredSize.Width) / 2, 238 + SlackDrop);
-                return;
+                row.Children.Add(notice);
             }
             if (toast != "")
             {
@@ -359,10 +357,14 @@ namespace Snapline
                     BorderBrush = Brush(Theme.Alpha("88", Theme.Rule)), BorderThickness = new Thickness(0.5),
                     IsHitTestVisible = false, Tag = "ShelfFeedback"
                 };
-                feedback.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
-                toastElement = feedback;
-                Place(feedback, (shelfWidth - feedback.DesiredSize.Width) / 2, 242 + SlackDrop);
+                if (row.Children.Count > 0) feedback.Margin = new Thickness(10, 0, 0, 0);
+                feedback.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(feedback);
             }
+            if (row.Children.Count == 0) return;
+            row.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
+            toastElement = row;
+            Place(row, (shelfWidth - row.DesiredSize.Width) / 2, 238 + SlackDrop);
         }
 
         void MakeHelpCard(double center, double y, int index)

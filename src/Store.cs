@@ -84,8 +84,11 @@ namespace Snapline
                 Settings.CaptureShortcut = "CtrlB";
             RestoreNotes();
             var saved = Read<List<Shot>>(Path.Combine(Root, "items.json")) ?? new List<Shot>();
-            foreach (var shot in saved.Take(MaxItems))
+            int loose = 0;
+            foreach (var shot in saved)
             {
+                // The limit counts only cards that are not kept, the same rule Add() applies.
+                if (shot == null || (!shot.Kept && ++loose > MaxItems)) continue;
                 try
                 {
                     if (IsSafe(shot.File) && System.IO.File.Exists(FullPath(shot)))
@@ -257,12 +260,23 @@ namespace Snapline
         // Stores the order of the whole line, first card first.
         internal void Reorder(IList<object> deck)
         {
+            var shotRanks = Items.ToDictionary(x => x, x => x.Rank);
+            var noteRanks = Notes.ToDictionary(x => x, x => x.Rank);
             for (int i = 0; i < deck.Count; i++)
             {
                 var shot = deck[i] as Shot; var memo = deck[i] as Memo;
                 if (shot != null) shot.Rank = deck.Count - i; else if (memo != null) memo.Rank = deck.Count - i;
             }
-            Save(); SaveNotes();
+            try { SaveNotes(); Save(); }
+            catch
+            {
+                // Put both lists back as they were, in memory and, as far as possible, on disk.
+                foreach (var pair in shotRanks) pair.Key.Rank = pair.Value;
+                foreach (var pair in noteRanks) pair.Key.Rank = pair.Value;
+                try { SaveNotes(); } catch { }
+                try { Save(); } catch { }
+                throw;
+            }
             if (Changed != null) Changed();
         }
         internal void SetKept(object item, bool kept)
@@ -286,9 +300,10 @@ namespace Snapline
         }
         internal void Clear()
         {
-            var removed = Items.ToList();
-            Items.Clear();
-            Save();
+            var removed = Items.Where(x => !x.Kept).ToList();
+            var before = Items;
+            Items = Items.Where(x => x.Kept).ToList();
+            try { Save(); } catch { Items = before; throw; }
             foreach (var item in removed) DeleteCache(item);
             if (Changed != null) Changed();
         }
