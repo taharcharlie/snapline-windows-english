@@ -262,9 +262,8 @@ namespace Snapline
         MemoEditor memoEditor;
         internal List<object> Deck()
         {
-            return store.Items.Cast<object>().Concat(store.Notes.Cast<object>())
-                .OrderByDescending(x => x is Memo ? ((Memo)x).Rank : ((Shot)x).Rank)
-                .ThenByDescending(x => x is Memo ? ((Memo)x).Created : ((Shot)x).Created).ToList();
+            return store.Items.Cast<object>().Concat(store.Notes.Cast<object>()).Concat(store.Links.Cast<object>())
+                .OrderByDescending(x => Store.RankOf(x)).ThenByDescending(x => Store.CreatedOf(x)).ToList();
         }
         internal void NewNote()
         {
@@ -293,7 +292,7 @@ namespace Snapline
         }
         void CopyNote(Memo note)
         {
-            try { SetClipboard(new DataObject(DataFormats.UnicodeText, note.Text)); Notify("Note text copied."); }
+            try { SetClipboard(new DataObject(DataFormats.UnicodeText, note.Text)); Flash(note, "Copied"); }
             catch (Exception ex) { store.Log("Copy memo", ex); Notify("Copy failed. Try again shortly."); }
         }
         void DeleteNote(Memo note)

@@ -124,7 +124,7 @@ namespace Snapline
         static IEnumerable<FrameworkElement> FlightDecorations(DependencyObject root)
         {
             var element = root as FrameworkElement;
-            if (element != null && (Object.Equals(element.Tag, "HangingPeg") || Object.Equals(element.Tag, "DeleteButton"))) yield return element;
+            if (element != null && (Object.Equals(element.Tag, "HangingPeg") || Object.Equals(element.Tag, "DeleteButton") || Object.Equals(element.Tag, "CardFlash") || Object.Equals(element.Tag, "FocusShade"))) yield return element;
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
                 foreach (var child in FlightDecorations(VisualTreeHelper.GetChild(root, i))) yield return child;
         }

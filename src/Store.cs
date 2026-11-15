@@ -83,6 +83,7 @@ namespace Snapline
             if (Settings.CaptureShortcut == "Custom" && ShortcutSpec.Validate(Settings.CustomCaptureModifiers, Settings.CustomCaptureKey) != null)
                 Settings.CaptureShortcut = "CtrlB";
             RestoreNotes();
+            RestoreLinks();
             var saved = Read<List<Shot>>(Path.Combine(Root, "items.json")) ?? new List<Shot>();
             int loose = 0;
             foreach (var shot in saved)
@@ -236,6 +237,7 @@ namespace Snapline
             double top = 0;
             foreach (var shot in Items) top = Math.Max(top, shot.Rank);
             foreach (var memo in Notes) top = Math.Max(top, memo.Rank);
+            foreach (var link in Links) top = Math.Max(top, link.Rank);
             return top + 1;
         }
         // Takes a screenshot off the list but leaves its saved copy on disk, so the removal can be undone.
@@ -262,18 +264,21 @@ namespace Snapline
         {
             var shotRanks = Items.ToDictionary(x => x, x => x.Rank);
             var noteRanks = Notes.ToDictionary(x => x, x => x.Rank);
+            var linkRanks = Links.ToDictionary(x => x, x => x.Rank);
             for (int i = 0; i < deck.Count; i++)
             {
-                var shot = deck[i] as Shot; var memo = deck[i] as Memo;
-                if (shot != null) shot.Rank = deck.Count - i; else if (memo != null) memo.Rank = deck.Count - i;
+                var shot = deck[i] as Shot; var memo = deck[i] as Memo; var link = deck[i] as Link;
+                if (shot != null) shot.Rank = deck.Count - i; else if (memo != null) memo.Rank = deck.Count - i; else if (link != null) link.Rank = deck.Count - i;
             }
-            try { SaveNotes(); Save(); }
+            try { if (Notes.Count > 0) SaveNotes(); if (Links.Count > 0) SaveLinks(); Save(); }
             catch
             {
-                // Put both lists back as they were, in memory and, as far as possible, on disk.
+                // Put every list back as it was, in memory and, as far as possible, on disk.
                 foreach (var pair in shotRanks) pair.Key.Rank = pair.Value;
                 foreach (var pair in noteRanks) pair.Key.Rank = pair.Value;
-                try { SaveNotes(); } catch { }
+                foreach (var pair in linkRanks) pair.Key.Rank = pair.Value;
+                try { if (Notes.Count > 0) SaveNotes(); } catch { }
+                try { if (Links.Count > 0) SaveLinks(); } catch { }
                 try { Save(); } catch { }
                 throw;
             }
@@ -281,9 +286,10 @@ namespace Snapline
         }
         internal void SetKept(object item, bool kept)
         {
-            var shot = item as Shot; var memo = item as Memo;
+            var shot = item as Shot; var memo = item as Memo; var link = item as Link;
             if (shot != null) { shot.Kept = kept; try { Save(); } catch { shot.Kept = !kept; throw; } }
             else if (memo != null) { memo.Kept = kept; try { SaveNotes(); } catch { memo.Kept = !kept; throw; } }
+            else if (link != null) { link.Kept = kept; try { SaveLinks(); } catch { link.Kept = !kept; throw; } }
             else return;
             if (Changed != null) Changed();
         }

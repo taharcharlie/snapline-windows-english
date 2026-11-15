@@ -48,6 +48,7 @@ namespace Snapline
             AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
             AddHelpRow(content, "Click / double-click", "Copy image / open it");
+            AddHelpRow(content, "Drop a file, link or text here", "Hangs a reference card, or a note");
             AddHelpRow(content, "Drag along the line", "Reorder the cards");
             AddHelpRow(content, "Pull a card down", "Drop it in an app, or on this card to delete");
             AddHelpRow(content, "Click a peg", "Delete; Undo shows for a few seconds");
@@ -208,7 +209,7 @@ namespace Snapline
             {
                 case 20: StepFocus(-1); break;
                 case 21: StepFocus(1); break;
-                case 22: if (item is Shot) Copy((Shot)item); else if (item is Memo) CopyNote((Memo)item); Collapse(true); break;
+                case 22: if (item != null) Activate(item); Collapse(true); break;
                 case 23: Collapse(true); break;
                 case 24: RemoveWithUndo(item); break;
                 case 25: ToggleKeep(item); break;
@@ -313,8 +314,9 @@ namespace Snapline
             for (int i = 0; i < shown.Length; i++)
             {
                 double center = HangingCenter(i, shown.Length);
-                var memo = shown[i] as Memo;
+                var memo = shown[i] as Memo; var link = shown[i] as Link;
                 if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, i);
+                else if (link != null) MakeLinkCard(link, center, RopeY(center) + 15, i);
                 else MakeCard((Shot)shown[i], center, RopeY(center) + 15, i);
                 Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], shown[i], first + i, rolled);
             }
@@ -336,7 +338,7 @@ namespace Snapline
             if (undoItem != null)
             {
                 var words = new TextBlock { FontSize = Theme.Size(12), Foreground = Brush(Theme.Text), VerticalAlignment = VerticalAlignment.Center };
-                words.Inlines.Add(undoItem is Memo ? "Note removed" : "Screenshot removed");
+                words.Inlines.Add(undoItem is Memo ? "Note removed" : undoItem is Link ? "Unhung; the original is untouched" : "Screenshot removed");
                 words.Inlines.Add(new System.Windows.Documents.Run("     Undo") { Foreground = Brush(Theme.Accent), FontWeight = FontWeights.SemiBold });
                 var notice = new Border
                 {

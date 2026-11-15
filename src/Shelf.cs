@@ -97,20 +97,21 @@ namespace Snapline
             Content = stage;
             FontFamily = Theme.Font;
             UseLayoutRounding = true;
-            int knownCount = store.Items.Count + store.Notes.Count;
-            store.Changed = delegate { int count = store.Items.Count + store.Notes.Count; bool deckChanged = count != knownCount; if (count > knownCount) { first = 0; focus = 0; } knownCount = count; Render(deckChanged); };
+            int knownCount = store.Items.Count + store.Notes.Count + store.Links.Count;
+            store.Changed = delegate { int count = store.Items.Count + store.Notes.Count + store.Links.Count; bool deckChanged = count != knownCount; if (count > knownCount) { first = 0; focus = 0; } knownCount = count; Render(deckChanged); };
             store.RemarkChanged = RefreshRemark;
             canvas.MouseWheel += delegate(object sender, MouseWheelEventArgs e) { if (expanded) { WheelBy(e.Delta); e.Handled = true; } };
             SourceInitialized += Initialize;
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (memoEditor != null && !memoEditor.FlushChanges()) e.Cancel = true; if (remarkEditor != null && !remarkEditor.TrySave()) e.Cancel = true; };
             Closed += Cleanup;
             AllowDrop = true;
-            DragOver += delegate(object sender, DragEventArgs e) { e.Effects = !dragging && e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
+            DragOver += delegate(object sender, DragEventArgs e) { e.Effects = !dragging && CanHang(e.Data) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
             Drop += delegate(object sender, DragEventArgs e)
             {
-                if (dragging || !e.Data.GetDataPresent(DataFormats.FileDrop)) return; // A card of our own dropped back on the line is not an import.
-                foreach (string file in (string[])e.Data.GetData(DataFormats.FileDrop)) Import(file);
-                e.Handled = true;
+                if (dragging || !CanHang(e.Data)) return; // A card of our own dropped back on the line is not hung again.
+                e.Effects = DragDropEffects.Copy; e.Handled = true; // Copy: the source keeps what was dragged.
+                try { HangDropped(e.Data); }
+                catch (Exception ex) { store.Log("Hang dropped item", ex); Notify("Could not hang that."); }
             };
         }
         static SolidColorBrush Brush(string hex) { var b = (SolidColorBrush)new BrushConverter().ConvertFromString(hex); b.Freeze(); return b; }
@@ -264,6 +265,8 @@ namespace Snapline
             if (!dragging && reorderSlots == null) ProcessPending();
             // Checked before the early exits below, so an open tooltip cannot keep a removed card recoverable forever.
             if (undoItem != null && !dragging && DateTime.Now > undoUntil) { FinishUndo(); UpdateToast(); }
+            if (linksStale && expanded && !collapsing && !dragging && reorderSlots == null && !helpReading && Mouse.LeftButton != MouseButtonState.Pressed &&
+                (imageTip == null || !imageTip.IsOpen) && (noteTip == null || !noteTip.IsOpen)) { linksStale = false; Render(); }
             if (dialogOpen || dragging || helpReading || capturePending) return;
             var point = PointerPosition(); if (!point.HasValue) return;
             var p = point.Value;

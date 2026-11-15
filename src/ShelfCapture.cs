@@ -166,7 +166,7 @@ namespace Snapline
 
                 SetClipboard(data);
 
-                Notify("Copied. Paste with Ctrl + V.");
+                Flash(shot, "Copied");
             }
             catch (Exception ex) { store.Log("Copy image", ex); Notify("Copy failed. Try again shortly."); }
 

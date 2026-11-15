@@ -44,24 +44,25 @@ namespace Snapline
         object undoItem; int undoIndex; DateTime undoUntil;
         static bool IsKept(object item)
         {
-            var shot = item as Shot; var memo = item as Memo;
-            return shot != null ? shot.Kept : memo != null && memo.Kept;
+            var shot = item as Shot; var memo = item as Memo; var link = item as Link;
+            return shot != null ? shot.Kept : memo != null ? memo.Kept : link != null && link.Kept;
         }
         // Takes a card off the line. It can be brought back until the Undo notice goes away.
         // `fall` plays the falling-paper animation; a card dropped on the bin is already off the rope, so it does not fall.
         internal void RemoveWithUndo(object item, bool fall = true)
         {
-            var shot = item as Shot; var memo = item as Memo;
-            if (shot == null && memo == null) return;
+            var shot = item as Shot; var memo = item as Memo; var link = item as Link;
+            if (shot == null && memo == null && link == null) return;
             if (IsKept(item)) { Notify("This card is kept. Right-click it and choose 'Stop keeping' first."); return; }
             try
             {
-                int index = shot != null ? store.Items.IndexOf(shot) : store.Notes.IndexOf(memo);
+                int index = shot != null ? store.Items.IndexOf(shot) : memo != null ? store.Notes.IndexOf(memo) : store.Links.IndexOf(link);
                 if (index < 0) return;
                 var previous = undoItem as Shot;
-                Action commit = delegate { if (shot != null) store.Detach(shot); else store.RemoveNote(memo); };
+                // For a reference card this only takes the card off the list; the file it points at is not touched.
+                Action commit = delegate { if (shot != null) store.Detach(shot); else if (memo != null) store.RemoveNote(memo); else store.RemoveLink(link); };
                 if (fall) RemoveWithFlight(HangingElement(item), commit); else commit();
-                bool gone = shot != null ? !store.Items.Contains(shot) : !store.Notes.Contains(memo);
+                bool gone = shot != null ? !store.Items.Contains(shot) : memo != null ? !store.Notes.Contains(memo) : !store.Links.Contains(link);
                 if (!gone) { Notify("Could not remove. The card is kept; try again shortly."); return; }
                 // Only the latest removal can be undone; the one before it becomes permanent now that this one succeeded.
                 if (previous != null) store.Discard(previous);
@@ -76,8 +77,8 @@ namespace Snapline
             object item = undoItem; if (item == null) return;
             try
             {
-                var shot = item as Shot;
-                if (shot != null) store.Reattach(shot, undoIndex); else store.RestoreNote((Memo)item, undoIndex);
+                var shot = item as Shot; var memo = item as Memo;
+                if (shot != null) store.Reattach(shot, undoIndex); else if (memo != null) store.RestoreNote(memo, undoIndex); else store.RestoreLink((Link)item, undoIndex);
                 undoItem = null; // Only once the card is really back.
                 keepUntil = DateTime.Now.AddSeconds(3);
                 // Show the restored card even when it came from further along the line.
@@ -145,7 +146,7 @@ namespace Snapline
                 if (e.ClickCount == 2)
                 {
                     hold.Stop(); down = false; card.ReleaseMouseCapture();
-                    if (shot != null) Launch(store.FullPath(shot)); else EditNote(memo, false);
+                    OpenItem(item);
                     return;
                 }
                 start = e.GetPosition(canvas); grabX = start.X - Canvas.GetLeft(card);
@@ -178,7 +179,7 @@ namespace Snapline
             {
                 hold.Stop(); bool wasDown = down, wasReorder = reorder; down = reorder = false; card.ReleaseMouseCapture(); e.Handled = true;
                 if (wasReorder) { EndReorder(card, true); return; }
-                if (wasDown && !held) { if (shot != null) Copy(shot); else CopyNote(memo); }
+                if (wasDown && !held) Activate(item);
             };
             card.LostMouseCapture += delegate { hold.Stop(); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
         }
@@ -243,7 +244,7 @@ namespace Snapline
         // The card leaves the rope and follows the pointer; it can be dropped into another app or on the bin.
         void Unclip(FrameworkElement card, object item)
         {
-            var shot = item as Shot; var memo = item as Memo;
+            var shot = item as Shot; var memo = item as Memo; var link = item as Link;
             DragGhost ghost = null;
             GiveFeedbackEventHandler follow = null;
             try
@@ -251,7 +252,9 @@ namespace Snapline
                 dragging = true; binDrop = false;
                 var data = new DataObject();
                 if (shot != null) data.SetData(DataFormats.FileDrop, new[] { store.FullPath(shot) });
-                else data.SetData(DataFormats.UnicodeText, memo.Text ?? "");
+                else if (memo != null) data.SetData(DataFormats.UnicodeText, memo.Text ?? "");
+                else if (link.IsUrl) data.SetData(DataFormats.UnicodeText, link.Target);
+                else data.SetData(DataFormats.FileDrop, new[] { link.Target });
                 try
                 {
                     var picture = FlightImage(card);
@@ -261,6 +264,7 @@ namespace Snapline
                 card.Opacity = 0.25; ShowBin(true);
                 follow = delegate { if (ghost != null) ghost.Follow(); };
                 card.GiveFeedback += follow;
+                // Move is offered only for the app's own screenshot copies. A reference card is copy-only: the original can never be moved away.
                 var result = DragDrop.DoDragDrop(card, data, shot != null && !shot.Kept ? DragDropEffects.Copy | DragDropEffects.Move : DragDropEffects.Copy);
                 if (binDrop) RemoveWithUndo(item, false);
                 else if (shot != null && ((result == DragDropEffects.Move && !shot.Kept) || !System.IO.File.Exists(store.FullPath(shot)))) store.Remove(shot);
