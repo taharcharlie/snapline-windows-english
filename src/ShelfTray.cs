@@ -51,7 +51,7 @@ namespace Snapline
             menu.Items.Add(shortcutMenu);
             UpdateShortcutMenu();
             menu.Items.Add("Open / close (auto-hide)", null, delegate { ToggleFromTray(); });
-            menu.Items.Add("New note", null, delegate { NewNote(); });
+            menu.Items.Add("New note", null, delegate { NewNote(); }).ToolTipText = "Ctrl + Alt + N";
             menu.Items.Add("Hang the clipboard", null, delegate { HangClipboard(); }).ToolTipText = "Ctrl + Alt + D";
             menu.Items.Add("Import images…", null, delegate { ChooseFiles(); });
             var tensionMenu = new Forms.ToolStripMenuItem("Line tension");
@@ -196,7 +196,7 @@ namespace Snapline
             {
                 Forms.MessageBox.Show("Snapline, Ashes edition (based on 0.5.8)\n\n" +
                     "OPEN\nTouch the line at the top centre, or press Ctrl + Alt + S (stays open; arrows roll, Enter or 1 to 9 copies, Esc closes).\nDouble-click the tray icon: open until you leave.\n\n" +
-                    "HANG\n" + CaptureShortcutLabel + ": capture a region and hang it (when the shortcut is available).\nCtrl + Alt + D: hang what is on the clipboard.\nDrop a file, folder, link or text on a card. Files and folders hang as references: the original is never moved or deleted.\n'+ Note' on the Tips card: a quick note.\n\n" +
+                    "HANG\n" + CaptureShortcutLabel + ": capture a region and hang it (when the shortcut is available).\nCtrl + Alt + D: hang what is on the clipboard.\nCtrl + Alt + N: start a new note.\nDrop a file, folder, link or text on a card. Files and folders hang as references: the original is never moved or deleted.\n'+ Note' on the Tips card: a quick note.\n\n" +
                     "USE\nClick a card: copy. Double-click: open or edit.\nDrag along the line: reorder. Pull a card down: drop it into an app, or on the Tips card to delete.\nClick a peg: delete, with Undo for a few seconds.\nRight-click: more, including Keep (yellow peg: never cleared).\n'Add caption' under an image: note what it is for.\n\n" +
                     "TRAY\nLine tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
                     "Win + Shift + S and other screenshot tools are not collected. Up to 60 screenshots and 60 reference cards are held; the oldest unkept ones make room.\nRuns entirely on this PC: no network, no uploads.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);

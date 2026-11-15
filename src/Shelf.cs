@@ -76,7 +76,7 @@ namespace Snapline
         double shelfWidth;
         string toast = "";
         DateTime toastUntil;
-        internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered, HangHotkeyRegistered;
+        internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered, HangHotkeyRegistered, NoteHotkeyRegistered;
         DateTime nextExpiry = DateTime.Now.AddSeconds(20);
         DateTime nextTriggerCheck;
         // Sets how long the touch line is. Returns true when the length changed.
@@ -155,6 +155,7 @@ namespace Snapline
             ClipboardRegistered = false; // Only direct capture results are collected.
             HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x53); // Ctrl+Alt+S, no repeat.
             HangHotkeyRegistered = Native.RegisterHotKey(handle, 4, 0x4003, 0x44); // Ctrl+Alt+D, no repeat.
+            NoteHotkeyRegistered = Native.RegisterHotKey(handle, 5, 0x4003, 0x4E); // Ctrl+Alt+N, no repeat.
             RegisterCaptureShortcut();
             screen = ScreenUnderPointer();
             MakeTray();
@@ -191,6 +192,7 @@ namespace Snapline
             if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
             if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + S is in use by another program. Open the line from the top edge or the tray.");
             else if (!HangHotkeyRegistered) StartupNotice("Ctrl + Alt + D is in use by another program. Hang the clipboard from the tray menu instead.");
+            else if (!NoteHotkeyRegistered) StartupNotice("Ctrl + Alt + N is in use by another program. Start a note from the tray menu instead.");
         }
         void StartupNotice(string message)
         {
@@ -205,6 +207,13 @@ namespace Snapline
             {
                 if (w.ToInt32() == 1) { Toggle(); handled = true; }
                 else if (w.ToInt32() == 4) { HangClipboard(); handled = true; }
+                else if (w.ToInt32() == 5)
+                {
+                    // The editor is a dialog that stays open; start it after this message has been answered.
+                    if (!(dragging || reorderSlots != null || memoEditor != null || remarkEditor != null || editingShortcut || shuttingDown))
+                        Dispatcher.BeginInvoke(new Action(NewNote));
+                    handled = true;
+                }
                 else if (w.ToInt32() >= 20 && w.ToInt32() <= 25) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
                 else if (w.ToInt32() >= 30 && w.ToInt32() <= 38) { if (lineKeys && expanded) LineDigit(w.ToInt32() - 29); handled = true; }
                 else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
@@ -441,7 +450,7 @@ namespace Snapline
             if (helpTip != null) helpTip.IsOpen = false;
 
             if (inboxWatcher != null) inboxWatcher.Dispose();
-            Native.UnregisterHotKey(handle, 1); Native.UnregisterHotKey(handle, 2); Native.UnregisterHotKey(handle, 3); Native.UnregisterHotKey(handle, 4);
+            Native.UnregisterHotKey(handle, 1); Native.UnregisterHotKey(handle, 2); Native.UnregisterHotKey(handle, 3); Native.UnregisterHotKey(handle, 4); Native.UnregisterHotKey(handle, 5);
             if (source != null) source.RemoveHook(Message);
             if (tray != null) { tray.Visible = false; tray.Dispose(); }
             store.Save(); store.SaveSettings();

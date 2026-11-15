@@ -32,6 +32,7 @@ Everything runs on your PC. The app has no network code, uploads nothing, and do
 | `Delete` | Delete the focused card (Undo appears) |
 | `Esc` | Close |
 | `Ctrl+Alt+D` | Hang what is on the clipboard |
+| `Ctrl+Alt+N` | Start a new note |
 | `Ctrl+Alt+A` | Capture a region and hang it (default; change it in the tray menu) |
 
 While the line is open from `Ctrl+Alt+S`, these plain keys go to Snapline rather than the app underneath, until you close the line or click somewhere else.

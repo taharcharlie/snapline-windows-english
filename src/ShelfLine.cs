@@ -46,6 +46,7 @@ namespace Snapline
             AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
             AddHelpRow(content, "1 to 9", "After Ctrl + Alt + S: copy that card");
             AddHelpRow(content, "Ctrl + Alt + D", "Hang what is on the clipboard");
+            AddHelpRow(content, "Ctrl + Alt + N", "Start a new note");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
