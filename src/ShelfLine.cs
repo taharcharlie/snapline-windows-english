@@ -45,10 +45,14 @@ namespace Snapline
             AddHelpRow(content, "Ctrl + Alt + S", "Pin open / close");
             AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
-            AddHelpRow(content, "Double-click a note", "Edit text and paper; right-click to copy or delete");
+            AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
             AddHelpRow(content, "Click / double-click", "Copy image / open it");
-            AddHelpRow(content, "Drag out / long-press", "Drop into a folder / edit in Paint");
+            AddHelpRow(content, "Drag along the line", "Reorder the cards");
+            AddHelpRow(content, "Pull a card down", "Drop it in an app, or on this card to delete");
+            AddHelpRow(content, "Click a peg", "Delete; Undo shows for a few seconds");
+            AddHelpRow(content, "Right-click → Keep", "Yellow peg: never cleared or deleted");
+            AddHelpRow(content, "Long-press an image", "Edit in Paint");
             AddHelpRow(content, "Right-click an image", "Save as, remove and more");
             var footer = Text("Only shortcut captures are collected; customise in the tray", 10, Theme.Mid);
             footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
@@ -91,8 +95,9 @@ namespace Snapline
             menu.Items.Add(Item("Edit in Paint", delegate { Edit(shot); }));
             menu.Items.Add(Item("Save as…", delegate { SaveAs(shot); }));
             menu.Items.Add(Item("Show in folder", delegate { Process.Start("explorer.exe", "/select,\"" + store.FullPath(shot) + "\""); }));
+            menu.Items.Add(Item(shot.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(shot); }));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("Remove from shelf", delegate { RemoveShot(shot); }));
+            menu.Items.Add(Item("Remove from the line", delegate { RemoveShot(shot); }));
             menu.Opened += delegate { CloseImagePreview(); dialogOpen = true; };
             menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; };
             return menu;
@@ -167,7 +172,7 @@ namespace Snapline
             }
         }
         // Gives a freshly hung card its focus scaling and, after a roll, slides it in from where it hung before.
-        void Dress(FrameworkElement card, int deckIndex, int rolled)
+        void Dress(FrameworkElement card, object item, int deckIndex, int rolled)
         {
             var scale = new ScaleTransform(1, 1, card.Width / 2, 0);
             var group = new TransformGroup(); group.Children.Add(scale); group.Children.Add(card.RenderTransform);
@@ -176,6 +181,8 @@ namespace Snapline
             ((Panel)card).Children.Add(shade);
             lineCards.Add(new LineCard { Element = card, Index = deckIndex, Scale = scale, Shade = shade });
             card.MouseEnter += delegate { if (DateTime.Now < rollingUntil || focus == deckIndex) return; focus = deckIndex; ApplyFocus(true); };
+            DressPeg((Panel)card, item);
+            AttachGestures(card, item);
             if (rolled == 0) return;
             double left = Canvas.GetLeft(card), top = Canvas.GetTop(card), shift = rolled * SlotWidth;
             double oldCenter = Math.Max(24, Math.Min(shelfWidth - 24, left + card.Width / 2 + shift));
@@ -184,7 +191,7 @@ namespace Snapline
             card.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(RopeY(oldCenter) + 15, top, time) { EasingFunction = ease });
         }
         bool lineKeys;
-        static readonly uint[] LineKeyCodes = { 0x25, 0x27, 0x0D, 0x1B, 0x2E };
+        static readonly uint[] LineKeyCodes = { 0x25, 0x27, 0x0D, 0x1B, 0x2E, 0x4B };
         // After the line is opened from the keyboard, arrows, Enter, Esc and Delete drive it until it closes.
         void SetLineKeys(bool on)
         {
@@ -203,7 +210,8 @@ namespace Snapline
                 case 21: StepFocus(1); break;
                 case 22: if (item is Shot) Copy((Shot)item); else if (item is Memo) CopyNote((Memo)item); Collapse(true); break;
                 case 23: Collapse(true); break;
-                case 24: SetLineKeys(false); if (item is Shot) RemoveShot((Shot)item); else if (item is Memo) DeleteNote((Memo)item); break;
+                case 24: RemoveWithUndo(item); break;
+                case 25: ToggleKeep(item); break;
             }
         }
         double HangingCenter(int index, int imageCount)
@@ -308,7 +316,7 @@ namespace Snapline
                 var memo = shown[i] as Memo;
                 if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, i);
                 else MakeCard((Shot)shown[i], center, RopeY(center) + 15, i);
-                Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], first + i, rolled);
+                Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], shown[i], first + i, rolled);
             }
             if (rolled != 0) rollingUntil = DateTime.Now.AddMilliseconds(260);
             ApplyFocus(false);
@@ -324,6 +332,23 @@ namespace Snapline
             if (toastElement != null) canvas.Children.Remove(toastElement);
             toastElement = null;
             if (!expanded) return;
+            if (undoItem != null)
+            {
+                var words = new TextBlock { FontSize = Theme.Size(12), Foreground = Brush(Theme.Text), VerticalAlignment = VerticalAlignment.Center };
+                words.Inlines.Add(undoItem is Memo ? "Note removed" : "Screenshot removed");
+                words.Inlines.Add(new System.Windows.Documents.Run("     Undo") { Foreground = Brush(Theme.Accent), FontWeight = FontWeights.SemiBold });
+                var notice = new Border
+                {
+                    Child = words, Padding = new Thickness(14, 7, 14, 7), Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Accent),
+                    BorderThickness = new Thickness(1), Cursor = Cursors.Hand, Tag = "ShelfUndo", ToolTip = "Bring the card back"
+                };
+                notice.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; };
+                notice.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; Undo(); };
+                notice.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                toastElement = notice;
+                Place(notice, (shelfWidth - notice.DesiredSize.Width) / 2, 238 + SlackDrop);
+                return;
+            }
             if (toast != "")
             {
                 var note = Text(toast, 11, Theme.Text);
@@ -374,6 +399,7 @@ namespace Snapline
                 "M0,12 V0 H12 M{0},0 H{1} V12 M{1},{2} V{3} H{0} M12,{3} H0 V{2}", width - 12, width, height - 12, height));
             grid.Children.Add(new System.Windows.Shapes.Path { Data = brackets, Stroke = Brush(Theme.Accent), StrokeThickness = 1.5, IsHitTestVisible = false });
             AddHangingPeg(grid);
+            AddBin(grid);
             helpTip = HelpPopup();
             helpTip.PlacementTarget = grid;
             grid.ToolTip = helpTip;
@@ -481,8 +507,9 @@ namespace Snapline
         {
             double imageWidth = Math.Max(1, shot.Thumb.PixelWidth), imageHeight = Math.Max(1, shot.Thumb.PixelHeight);
             double scale = Math.Min(192 / imageWidth, 124 / imageHeight);
-            double width = Math.Max(70, imageWidth * scale) + 7;
-            double height = Math.Max(54, imageHeight * scale) + 7;
+            // Whole numbers: with layout rounding, a fractional size makes WPF clip the peg above the card.
+            double width = Math.Round(Math.Max(70, imageWidth * scale)) + 7;
+            double height = Math.Round(Math.Max(54, imageHeight * scale)) + 7;
             double lean = Lean(new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5]);
             double cardWidth = width;
             var swing = new RotateTransform(lean, cardWidth / 2, -15);
@@ -559,39 +586,6 @@ namespace Snapline
                 SetHangingAnimation(swing, breeze);
             };
             grid.ContextMenu = ShotMenu(shot);
-            bool down = false, moved = false, held = false;
-            System.Windows.Point start = new System.Windows.Point();
-            var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
-            hold.Tick += delegate { hold.Stop(); if (down && !moved) { held = true; down = false; grid.ReleaseMouseCapture(); Edit(shot); } };
-            grid.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
-            {
-                e.Handled = true;
-                if (e.ClickCount == 2) { hold.Stop(); down = false; grid.ReleaseMouseCapture(); Launch(store.FullPath(shot)); return; }
-                start = e.GetPosition(grid); down = true; moved = held = false; grid.CaptureMouse(); hold.Start();
-            };
-            grid.MouseMove += delegate(object sender, MouseEventArgs e)
-            {
-                if (!down || moved || held || e.LeftButton != MouseButtonState.Pressed) return;
-                var p = e.GetPosition(grid);
-                if (Math.Abs(p.X - start.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(p.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-                moved = true; down = false; hold.Stop(); grid.ReleaseMouseCapture();
-                try
-                {
-                    dragging = true;
-                    var data = new DataObject(DataFormats.FileDrop, new[] { store.FullPath(shot) });
-                    var result = DragDrop.DoDragDrop(grid, data, DragDropEffects.Copy | DragDropEffects.Move);
-                    if (result == DragDropEffects.Move || !System.IO.File.Exists(store.FullPath(shot))) store.Remove(shot);
-                }
-                catch (Exception ex) { store.Log("Drag image", ex); Notify("Drag did not complete. Right-click and use Save as."); }
-                finally { dragging = false; lastInside = DateTime.Now; }
-            };
-            grid.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e)
-            {
-                hold.Stop(); grid.ReleaseMouseCapture();
-                if (down && !moved && !held) Copy(shot);
-                down = false; e.Handled = true;
-            };
-            grid.LostMouseCapture += delegate { hold.Stop(); };
             card.Children.Add(grid);
             card.Children.Add(RemarkStrip(shot, cardWidth, height));
             Place(card, center - cardWidth / 2, y);

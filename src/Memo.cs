@@ -25,6 +25,8 @@ namespace Snapline
         [DataMember] public string Color;
         [DataMember] public DateTime Created;
         [DataMember] public DateTime Updated;
+        [DataMember] public double Rank;
+        [DataMember] public bool Kept;
     }
     sealed partial class Store
     {
@@ -65,7 +67,7 @@ namespace Snapline
         {
             if (text == null) text = "";
             if (text.Length > MaxNoteText) throw new InvalidOperationException("A note can hold up to 20000 characters.");
-            var memo = new Memo { Id = Guid.NewGuid().ToString("N"), Text = text, Color = MemoTheme.Normalize(color), Created = DateTime.Now, Updated = DateTime.Now };
+            var memo = new Memo { Id = Guid.NewGuid().ToString("N"), Text = text, Color = MemoTheme.Normalize(color), Created = DateTime.Now, Updated = DateTime.Now, Rank = NextRank() };
             Notes.Insert(0, memo);
             try { SaveNotes(); } catch { Notes.Remove(memo); throw; }
             if (Changed != null) Changed();
@@ -83,6 +85,14 @@ namespace Snapline
             memo.Text = text; memo.Color = color; memo.Updated = DateTime.Now;
             try { SaveNotes(); }
             catch { memo.Text = oldText; memo.Color = oldColor; memo.Updated = oldTime; throw; }
+            if (Changed != null) Changed();
+        }
+        internal void RestoreNote(Memo memo, int index)
+        {
+            if (Notes.Contains(memo)) return;
+            index = Math.Max(0, Math.Min(Notes.Count, index));
+            Notes.Insert(index, memo);
+            try { SaveNotes(); } catch { Notes.Remove(memo); throw; }
             if (Changed != null) Changed();
         }
         internal void RemoveNote(Memo memo)
@@ -252,7 +262,9 @@ namespace Snapline
         MemoEditor memoEditor;
         internal List<object> Deck()
         {
-            return store.Items.Cast<object>().Concat(store.Notes.Cast<object>()).OrderByDescending(x => x is Memo ? ((Memo)x).Created : ((Shot)x).Created).ToList();
+            return store.Items.Cast<object>().Concat(store.Notes.Cast<object>())
+                .OrderByDescending(x => x is Memo ? ((Memo)x).Rank : ((Shot)x).Rank)
+                .ThenByDescending(x => x is Memo ? ((Memo)x).Created : ((Shot)x).Created).ToList();
         }
         internal void NewNote()
         {
@@ -286,14 +298,8 @@ namespace Snapline
         }
         void DeleteNote(Memo note)
         {
-            CloseNotePreview(); dialogOpen = true;
-            try
-            {
-                if (MessageBox.Show(this, "Delete this note? Its text will not be kept.", "Delete note", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-                    RemoveMemo(note);
-            }
-            catch (Exception ex) { store.Log("Delete memo", ex); Notify(ex.Message); }
-            finally { dialogOpen = false; keepUntil = DateTime.Now.AddSeconds(3); lastInside = DateTime.Now; }
+            // No confirmation dialog: the removal can be undone from the notice on the line.
+            CloseNotePreview(); RemoveWithUndo(note);
         }
         void CloseNotePreview()
         {
@@ -310,7 +316,7 @@ namespace Snapline
             text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             content.Children.Add(scroll);
-            content.Children.Add(new TextBlock { Text = "Double-click to edit · Right-click to copy or delete", FontSize = Theme.Size(11), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
+            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to edit", FontSize = Theme.Size(11), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
             var tip = new ToolTip { Content = new Border { Child = content, Padding = new Thickness(18), CornerRadius = Theme.Radius(9), Background = MemoTheme.Paper(note.Color),
                     BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1) },
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HasDropShadow = true,
@@ -355,7 +361,8 @@ namespace Snapline
             remove.HorizontalAlignment = HorizontalAlignment.Right; remove.VerticalAlignment = VerticalAlignment.Top; remove.Margin = new Thickness(0, -9, -8, 0); remove.Opacity = 0; remove.IsHitTestVisible = false;
             remove.Click += delegate { DeleteNote(note); }; grid.Children.Add(remove);
             var menu = new ContextMenu(); menu.Items.Add(Item("Edit note", delegate { EditNote(note, false); })); menu.Items.Add(Item("Copy text", delegate { CopyNote(note); }));
-            menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note…", delegate { DeleteNote(note); }));
+            menu.Items.Add(Item(note.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(note); }));
+            menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note", delegate { DeleteNote(note); }));
             menu.Opened += delegate { CloseNotePreview(); }; grid.ContextMenu = menu;
             grid.ToolTip = NotePopup(note, grid); ToolTipService.SetInitialShowDelay(grid, 280); ToolTipService.SetBetweenShowDelay(grid, 100); ToolTipService.SetShowDuration(grid, 60000);
             RegisterHoverPreview(grid);
@@ -363,7 +370,6 @@ namespace Snapline
             Timeline.SetDesiredFrameRate(breeze, 24); RegisterHangingMotion(grid, swing, breeze);
             grid.MouseEnter += delegate { if (hoverEffectsPaused) return; remove.IsHitTestVisible = true; remove.Opacity = 1; SetHangingAnimation(swing, new DoubleAnimation(0, TimeSpan.FromMilliseconds(180))); };
             grid.MouseLeave += delegate { CloseNotePreview(); if (hoverEffectsPaused) return; remove.IsHitTestVisible = false; remove.Opacity = 0; SetHangingAnimation(swing, breeze); };
-            grid.PreviewMouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { CloseNotePreview(); if (e.ClickCount == 2) { e.Handled = true; EditNote(note, false); } };
             Place(grid, center - width / 2, y);
         }
     }

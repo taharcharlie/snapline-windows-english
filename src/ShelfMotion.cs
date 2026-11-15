@@ -177,8 +177,7 @@ namespace Snapline
         internal void RemoveShot(Shot shot)
         {
             if (!store.Items.Contains(shot)) return;
-            try { RemoveWithFlight(HangingElement(shot), delegate { store.Remove(shot); }); }
-            catch (Exception ex) { store.Log("Remove screenshot", ex); Notify("Could not remove. The screenshot is kept; try again shortly."); }
+            RemoveWithUndo(shot);
         }
         internal void RemoveMemo(Memo note)
         {

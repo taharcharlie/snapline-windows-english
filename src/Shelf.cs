@@ -105,10 +105,10 @@ namespace Snapline
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (memoEditor != null && !memoEditor.FlushChanges()) e.Cancel = true; if (remarkEditor != null && !remarkEditor.TrySave()) e.Cancel = true; };
             Closed += Cleanup;
             AllowDrop = true;
-            DragOver += delegate(object sender, DragEventArgs e) { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
+            DragOver += delegate(object sender, DragEventArgs e) { e.Effects = !dragging && e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
             Drop += delegate(object sender, DragEventArgs e)
             {
-                if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+                if (dragging || !e.Data.GetDataPresent(DataFormats.FileDrop)) return; // A card of our own dropped back on the line is not an import.
                 foreach (string file in (string[])e.Data.GetData(DataFormats.FileDrop)) Import(file);
                 e.Handled = true;
             };
@@ -170,7 +170,7 @@ namespace Snapline
             if (msg == Native.Hotkey)
             {
                 if (w.ToInt32() == 1) { Toggle(); handled = true; }
-                else if (w.ToInt32() >= 20 && w.ToInt32() <= 24) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
+                else if (w.ToInt32() >= 20 && w.ToInt32() <= 25) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
                 else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
                 {
                     if (!editingShortcut) StartCapture(ShortcutCollects, ShortcutSpec.From(store.Settings).Key);
@@ -262,6 +262,8 @@ namespace Snapline
             // Typing into an editor or a dialog must never be taken over by the line keys.
             if (lineKeys && (dialogOpen || memoEditor != null || remarkEditor != null || editingShortcut)) SetLineKeys(false);
             ProcessPending();
+            // Checked before the early exits below, so an open tooltip cannot keep a removed card recoverable forever.
+            if (undoItem != null && !dragging && DateTime.Now > undoUntil) { FinishUndo(); UpdateToast(); }
             if (dialogOpen || dragging || helpReading || capturePending) return;
             var point = PointerPosition(); if (!point.HasValue) return;
             var p = point.Value;
@@ -380,7 +382,7 @@ namespace Snapline
             store.RemarkChanged = null;
             transitionSerial++; shelfSlide.BeginAnimation(TranslateTransform.YProperty, null);
             ClearHoverEffects(); CloseFallingPapers();
-            SetLineKeys(false);
+            SetLineKeys(false); FinishUndo();
             tick.Stop(); captureDelay.Stop();
             CloseImagePreview(); CloseNotePreview();
             if (helpTip != null) helpTip.IsOpen = false;

@@ -35,6 +35,9 @@ namespace Snapline
         [DataMember] public string Label;
         [DataMember] public string Remark;
         [DataMember] public DateTime Created;
+        // Position on the line (higher is further left) and whether the card is protected from clearing.
+        [DataMember] public double Rank;
+        [DataMember] public bool Kept;
         internal BitmapSource Thumb;
     }
 
@@ -199,11 +202,12 @@ namespace Snapline
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(image));
             using (var stream = System.IO.File.Create(full)) encoder.Save(stream);
-            var shot = new Shot { File = filename, Digest = hash, Label = label, Created = DateTime.Now, Thumb = Thumbnail(image) };
+            var shot = new Shot { File = filename, Digest = hash, Label = label, Created = DateTime.Now, Thumb = Thumbnail(image), Rank = NextRank() };
             Items.Insert(0, shot);
             // Commit first; do not delete an older cache image until the new list is durable.
-            var overflow = Items.Skip(MaxItems).ToList();
-            Items = Items.Take(MaxItems).ToList();
+            // Kept cards do not count towards the limit and are never cleared by it.
+            var overflow = Items.Where(x => !x.Kept).Skip(MaxItems).ToList();
+            Items = Items.Where(x => !overflow.Contains(x)).ToList();
             Save();
             foreach (var old in overflow) DeleteCache(old);
             if (Changed != null) Changed();
@@ -221,6 +225,52 @@ namespace Snapline
             Items.RemoveAt(index);
             try { Save(); } catch { Items.Insert(index, item); throw; }
             DeleteCache(item);
+            if (Changed != null) Changed();
+        }
+        // A new card goes to the left end of the line.
+        internal double NextRank()
+        {
+            double top = 0;
+            foreach (var shot in Items) top = Math.Max(top, shot.Rank);
+            foreach (var memo in Notes) top = Math.Max(top, memo.Rank);
+            return top + 1;
+        }
+        // Takes a screenshot off the list but leaves its saved copy on disk, so the removal can be undone.
+        internal void Detach(Shot item)
+        {
+            int index = Items.IndexOf(item); if (index < 0) return;
+            Items.RemoveAt(index);
+            try { Save(); } catch { Items.Insert(index, item); throw; }
+            if (Changed != null) Changed();
+        }
+        internal void Reattach(Shot item, int index)
+        {
+            if (Items.Contains(item)) return;
+            if (!System.IO.File.Exists(FullPath(item))) throw new InvalidOperationException("its saved copy is gone.");
+            index = Math.Max(0, Math.Min(Items.Count, index));
+            Items.Insert(index, item);
+            try { Save(); } catch { Items.Remove(item); throw; }
+            if (Changed != null) Changed();
+        }
+        // Deletes the saved copy of a screenshot that is no longer on the list.
+        internal void Discard(Shot item) { if (!Items.Contains(item)) DeleteCache(item); }
+        // Stores the order of the whole line, first card first.
+        internal void Reorder(IList<object> deck)
+        {
+            for (int i = 0; i < deck.Count; i++)
+            {
+                var shot = deck[i] as Shot; var memo = deck[i] as Memo;
+                if (shot != null) shot.Rank = deck.Count - i; else if (memo != null) memo.Rank = deck.Count - i;
+            }
+            Save(); SaveNotes();
+            if (Changed != null) Changed();
+        }
+        internal void SetKept(object item, bool kept)
+        {
+            var shot = item as Shot; var memo = item as Memo;
+            if (shot != null) { shot.Kept = kept; try { Save(); } catch { shot.Kept = !kept; throw; } }
+            else if (memo != null) { memo.Kept = kept; try { SaveNotes(); } catch { memo.Kept = !kept; throw; } }
+            else return;
             if (Changed != null) Changed();
         }
         internal void Refresh(Shot item)
