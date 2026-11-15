@@ -51,7 +51,9 @@ While the line is open from `Ctrl+Alt+S`, these plain keys go to Snapline rather
 
 ## Tray menu
 
-Capture shortcut, line tension, auto-clear, start at login, keep visible, import images, clear screenshots, help and quit.
+Capture shortcut, line tension, touch line length, auto-clear, start at login, keep visible, import images, clear screenshots, help and quit.
+
+The touch line is the thin strip at the top centre that opens the line. It has three lengths: short, medium (one and a half times that), and long, which matches the width of the date and clock in the middle of a komorebi bar.
 
 ## Limits and data
 

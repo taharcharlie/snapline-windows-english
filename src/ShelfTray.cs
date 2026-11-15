@@ -63,6 +63,19 @@ namespace Snapline
             }
             tensionMenu.DropDownOpening += delegate { int now = (int)Math.Round(Slack * 100); foreach (Forms.ToolStripMenuItem item in tensionMenu.DropDownItems) item.Checked = (int)item.Tag == now; };
             menu.Items.Add(tensionMenu);
+            var triggerMenu = new Forms.ToolStripMenuItem("Touch line length");
+            var lengths = new[] { new { Name = "Short", Value = 0 }, new { Name = "Medium", Value = 1 }, new { Name = "Long (as wide as the bar's date and clock)", Value = 2 } };
+            foreach (var choice in lengths)
+            {
+                int value = choice.Value;
+                triggerMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(choice.Name, null, delegate
+                {
+                    store.Settings.TriggerLength = value; store.SaveSettings();
+                    ApplyTriggerLength(); if (!expanded && !collapsing) Render();
+                }) { Tag = value });
+            }
+            triggerMenu.DropDownOpening += delegate { foreach (Forms.ToolStripMenuItem item in triggerMenu.DropDownItems) item.Checked = (int)item.Tag == store.Settings.TriggerLength; };
+            menu.Items.Add(triggerMenu);
             var clearMenu = new Forms.ToolStripMenuItem("Auto-clear old cards");
             var ages = new[] { new { Name = "Never", Value = 0 }, new { Name = "After 1 day", Value = 1 }, new { Name = "After 7 days", Value = 7 }, new { Name = "After 30 days", Value = 30 } };
             foreach (var choice in ages)

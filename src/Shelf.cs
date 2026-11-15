@@ -78,6 +78,35 @@ namespace Snapline
         DateTime toastUntil;
         internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered, HangHotkeyRegistered;
         DateTime nextExpiry = DateTime.Now.AddSeconds(20);
+        DateTime nextTriggerCheck;
+        // Sets how long the touch line is. Returns true when the length changed.
+        bool ApplyTriggerLength()
+        {
+            int mode = store.Settings.TriggerLength;
+            double width = mode == 1 ? TopHoverGate.IndicatorWidth * 1.5 : mode == 2 ? BarClockWidth() : TopHoverGate.IndicatorWidth;
+            nextTriggerCheck = DateTime.Now.AddSeconds(30);
+            double shift = mode == 2 ? BarShift : 0;
+            if (Math.Abs(width - TopHoverGate.Width) < 0.5 && shift == TopHoverGate.Shift) return false;
+            TopHoverGate.Width = width; TopHoverGate.Shift = shift;
+            return true;
+        }
+        // The width of the date and clock in the middle of the bar ("Sunday, Nov 15   5:57 PM"), worked out by measuring
+        // the same words in the bar's font and size. It changes a little with the day, the month and the hour.
+        double BarClockWidth()
+        {
+            try
+            {
+                var face = new Typeface(Theme.Font, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
+                var plain = System.Globalization.CultureInfo.InvariantCulture; DateTime now = DateTime.Now;
+                double total = BarGap;
+                foreach (string words in new[] { now.ToString("dddd, MMM d", plain), now.ToString("h:mm tt", plain) })
+                    total += new FormattedText(words, plain, FlowDirection.LeftToRight, face, BarFontSize, Brushes.Black, Math.Max(1, Dpi())).WidthIncludingTrailingWhitespace;
+                return Math.Max(TopHoverGate.IndicatorWidth * 1.5, Math.Min(300, total));
+            }
+            catch { return 154; }
+        }
+        // The bar's font size, the space it leaves between the date and the clock, and how far right of centre the pair sits.
+        const double BarFontSize = 16, BarGap = 31, BarShift = 5.5;
         internal string CaptureShortcutLabel { get { var shortcut = ShortcutSpec.From(store.Settings); return shortcut == null ? "Shortcut off" : shortcut.Label; } }
         internal Shelf(Store data, bool noCapture, bool demo)
         {
@@ -138,6 +167,7 @@ namespace Snapline
             captureDelay.Interval = TimeSpan.FromMilliseconds(80);
             captureDelay.Tick += CaptureWhenReleased;
 
+            ApplyTriggerLength();
             Position(false, screen);
             SetupWatchers();
 
@@ -265,6 +295,8 @@ namespace Snapline
         void Tick(object sender, EventArgs e)
         {
             if (shuttingDown) return;
+            // The longest setting follows the bar's date and clock, whose width shifts through the day.
+            if (store.Settings.TriggerLength == 2 && DateTime.Now > nextTriggerCheck && ApplyTriggerLength() && !expanded && !collapsing) Render();
             // Typing into an editor or a dialog must never be taken over by the line keys.
             if (lineKeys && (dialogOpen || memoEditor != null || remarkEditor != null || editingShortcut)) SetLineKeys(false);
             // The line is not open, or the user switched to another window: plain keys belong to that app again.

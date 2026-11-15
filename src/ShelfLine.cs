@@ -286,10 +286,10 @@ namespace Snapline
             if (!expanded) motionLayer.Children.Clear();
             if (!expanded)
             {
-                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = Theme.Radius(1), Background = Brush(Theme.Accent), ToolTip = "Touch this line to open · See the 'Tips' card for help" };
+                var mark = new Border { Width = TopHoverGate.Width, Height = TopHoverGate.IndicatorHeight, CornerRadius = Theme.Radius(1), Background = Brush(Theme.Accent), ToolTip = "Touch this line to open · See the 'Tips' card for help" };
                 indicator = mark;
                 mark.MouseEnter += delegate { TryRevealFromIndicator(); };
-                Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.IndicatorWidth) / 2), 0);
+                Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.Width) / 2 + TopHoverGate.Shift), 0);
                 return;
             }
             double left = 24, right = shelfWidth - 24;

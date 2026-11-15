@@ -8,12 +8,16 @@ namespace Snapline
     static class TopHoverGate
     {
         internal const double IndicatorWidth = 68, IndicatorHeight = 2;
+        // The line's current length; IndicatorWidth is the shortest setting.
+        internal static double Width = IndicatorWidth;
+        // Sideways nudge from the middle of the screen, for lining the line up with something that is not quite centred.
+        internal static double Shift;
         internal static Rectangle IndicatorBounds(Rectangle area, double dpi)
         {
             dpi = dpi > 0 ? dpi : 1;
-            int width = Math.Min(area.Width, Math.Max(1, (int)Math.Round(IndicatorWidth * dpi)));
+            int width = Math.Min(area.Width, Math.Max(1, (int)Math.Round(Width * dpi)));
             int height = Math.Max(1, (int)Math.Round(IndicatorHeight * dpi));
-            return new Rectangle(area.Left + (area.Width - width) / 2, area.Top, width, height);
+            return new Rectangle(area.Left + (area.Width - width) / 2 + (int)Math.Round(Shift * dpi), area.Top, width, height);
         }
         internal static bool Contains(Rectangle area, int x, int y, double dpi)
         {
