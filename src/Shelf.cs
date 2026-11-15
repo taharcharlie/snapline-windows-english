@@ -76,7 +76,8 @@ namespace Snapline
         double shelfWidth;
         string toast = "";
         DateTime toastUntil;
-        internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered;
+        internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered, HangHotkeyRegistered;
+        DateTime nextExpiry = DateTime.Now.AddSeconds(20);
         internal string CaptureShortcutLabel { get { var shortcut = ShortcutSpec.From(store.Settings); return shortcut == null ? "Shortcut off" : shortcut.Label; } }
         internal Shelf(Store data, bool noCapture, bool demo)
         {
@@ -124,6 +125,7 @@ namespace Snapline
 
             ClipboardRegistered = false; // Only direct capture results are collected.
             HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x53); // Ctrl+Alt+S, no repeat.
+            HangHotkeyRegistered = Native.RegisterHotKey(handle, 4, 0x4003, 0x44); // Ctrl+Alt+D, no repeat.
             RegisterCaptureShortcut();
             screen = ScreenUnderPointer();
             MakeTray();
@@ -158,6 +160,7 @@ namespace Snapline
 
             if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
             if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + S is in use by another program. Open the line from the top edge or the tray.");
+            else if (!HangHotkeyRegistered) StartupNotice("Ctrl + Alt + D is in use by another program. Hang the clipboard from the tray menu instead.");
         }
         void StartupNotice(string message)
         {
@@ -171,7 +174,9 @@ namespace Snapline
             if (msg == Native.Hotkey)
             {
                 if (w.ToInt32() == 1) { Toggle(); handled = true; }
+                else if (w.ToInt32() == 4) { HangClipboard(); handled = true; }
                 else if (w.ToInt32() >= 20 && w.ToInt32() <= 25) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
+                else if (w.ToInt32() >= 30 && w.ToInt32() <= 38) { if (lineKeys && expanded) LineDigit(w.ToInt32() - 29); handled = true; }
                 else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
                 {
                     if (!editingShortcut) StartCapture(ShortcutCollects, ShortcutSpec.From(store.Settings).Key);
@@ -265,6 +270,17 @@ namespace Snapline
             if (!dragging && reorderSlots == null) ProcessPending();
             // Checked before the early exits below, so an open tooltip cannot keep a removed card recoverable forever.
             if (undoItem != null && !dragging && DateTime.Now > undoUntil) { FinishUndo(); UpdateToast(); }
+            if (store.Settings.AutoClearDays > 0 && DateTime.Now > nextExpiry)
+            {
+                // Never under the user's eyes: wait until the line is closed and nothing is in hand.
+                if (expanded || dragging || reorderSlots != null || dialogOpen || undoItem != null || FlyingCount > 0) nextExpiry = DateTime.Now.AddMinutes(1);
+                else
+                {
+                    nextExpiry = DateTime.Now.AddHours(1);
+                    try { store.Expire(store.Settings.AutoClearDays); }
+                    catch (Exception ex) { store.Log("Auto-clear", ex); }
+                }
+            }
             if (linksStale && expanded && !collapsing && !dragging && reorderSlots == null && !helpReading && Mouse.LeftButton != MouseButtonState.Pressed &&
                 (imageTip == null || !imageTip.IsOpen) && (noteTip == null || !noteTip.IsOpen)) { linksStale = false; Render(); }
             if (dialogOpen || dragging || helpReading || capturePending) return;
@@ -391,7 +407,7 @@ namespace Snapline
             if (helpTip != null) helpTip.IsOpen = false;
 
             if (inboxWatcher != null) inboxWatcher.Dispose();
-            Native.UnregisterHotKey(handle, 1); Native.UnregisterHotKey(handle, 2); Native.UnregisterHotKey(handle, 3);
+            Native.UnregisterHotKey(handle, 1); Native.UnregisterHotKey(handle, 2); Native.UnregisterHotKey(handle, 3); Native.UnregisterHotKey(handle, 4);
             if (source != null) source.RemoveHook(Message);
             if (tray != null) { tray.Visible = false; tray.Dispose(); }
             store.Save(); store.SaveSettings();

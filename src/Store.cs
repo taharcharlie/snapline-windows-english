@@ -55,6 +55,8 @@ namespace Snapline
         [DataMember] public int StartupRevision;
         // Rope slack in percent; 0 means "not set" and reads as 100.
         [DataMember] public int LineSlack;
+        // Unkept cards older than this many days are removed; 0 means never.
+        [DataMember] public int AutoClearDays;
     }
 
     sealed partial class Store

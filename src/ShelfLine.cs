@@ -44,6 +44,8 @@ namespace Snapline
             AddHelpRow(content, "Slip under an image", "Add or edit its caption");
             AddHelpRow(content, "Ctrl + Alt + S", "Pin open / close");
             AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
+            AddHelpRow(content, "1 to 9", "After Ctrl + Alt + S: copy that card");
+            AddHelpRow(content, "Ctrl + Alt + D", "Hang what is on the clipboard");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
@@ -182,7 +184,7 @@ namespace Snapline
             ((Panel)card).Children.Add(shade);
             lineCards.Add(new LineCard { Element = card, Index = deckIndex, Scale = scale, Shade = shade });
             card.MouseEnter += delegate { if (DateTime.Now < rollingUntil || focus == deckIndex) return; focus = deckIndex; ApplyFocus(true); };
-            DressPeg((Panel)card, item);
+            DressPeg((Panel)card, item, deckIndex - first + 1);
             AttachGestures(card, item);
             if (rolled == 0) return;
             double left = Canvas.GetLeft(card), top = Canvas.GetTop(card), shift = rolled * SlotWidth;
@@ -200,6 +202,22 @@ namespace Snapline
             lineKeys = on;
             for (int i = 0; i < LineKeyCodes.Length; i++)
                 if (on) Native.RegisterHotKey(handle, 20 + i, i < 2 ? 0u : 0x4000u, LineKeyCodes[i]); else Native.UnregisterHotKey(handle, 20 + i);
+            // 1 to 9 grab the card with that number on its peg.
+            for (int i = 0; i < 9; i++)
+                if (on) Native.RegisterHotKey(handle, 30 + i, 0x4000u, (uint)(0x31 + i)); else Native.UnregisterHotKey(handle, 30 + i);
+            foreach (var card in lineCards)
+            {
+                var panel = card.Element as Panel; if (panel == null) continue;
+                foreach (var number in panel.Children.OfType<Border>().Where(x => Object.Equals(x.Tag, "PegNumber")))
+                    number.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+        void LineDigit(int number)
+        {
+            var deck = Deck(); int at = first + number - 1;
+            if (at < 0 || at >= deck.Count || !lineCards.Any(x => x.Index == at)) return;
+            focus = at; ApplyFocus(true);
+            Activate(deck[at]); Collapse(true);
         }
         void LineKey(int id)
         {

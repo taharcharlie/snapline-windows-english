@@ -74,6 +74,33 @@ namespace Snapline
             }
             catch { return false; }
         }
+        // Unkept cards hung more than the given number of days ago. A card with no date is left alone.
+        internal List<object> Expired(int days)
+        {
+            var old = new List<object>();
+            if (days <= 0) return old;
+            DateTime cutoff = DateTime.Now.AddDays(-days);
+            old.AddRange(Items.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
+            old.AddRange(Notes.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
+            old.AddRange(Links.Where(x => !x.Kept && x.Created.Year > 2000 && x.Created < cutoff).Cast<object>());
+            return old;
+        }
+        internal int Expire(int days)
+        {
+            int count = 0;
+            foreach (object item in Expired(days))
+            {
+                try
+                {
+                    var shot = item as Shot; var memo = item as Memo; var link = item as Link;
+                    // For a reference card only the card goes; the file it points at is not touched.
+                    if (shot != null) Remove(shot); else if (memo != null) RemoveNote(memo); else if (link != null) RemoveLink(link);
+                    count++;
+                }
+                catch (Exception ex) { Log("Auto-clear card", ex); }
+            }
+            return count;
+        }
         void RestoreLinks()
         {
             if (!File.Exists(LinksFile)) return;
@@ -351,6 +378,49 @@ namespace Snapline
         {
             return data.GetDataPresent(DataFormats.FileDrop) || data.GetDataPresent("UniformResourceLocatorW") ||
                 data.GetDataPresent("UniformResourceLocator") || data.GetDataPresent(DataFormats.UnicodeText);
+        }
+        internal void HangClipboard()
+        {
+            if (dialogOpen || dragging || reorderSlots != null || memoEditor != null || remarkEditor != null || editingShortcut) return;
+            try
+            {
+                IDataObject data = null;
+                // Another program may hold the clipboard for a moment.
+                for (int i = 0; i < 4 && data == null; i++)
+                {
+                    try { data = Clipboard.GetDataObject(); }
+                    catch (System.Runtime.InteropServices.COMException) { System.Threading.Thread.Sleep(40); }
+                }
+                Reveal(); keepUntil = DateTime.Now.AddSeconds(4);
+                if (data == null) { Notify("The clipboard is busy. Try again."); return; }
+                if (data.GetDataPresent(DataFormats.FileDrop)) { HangDropped(data); return; }
+                if (Clipboard.ContainsImage())
+                {
+                    var image = Clipboard.GetImage();
+                    if (image != null)
+                    {
+                        var opaque = new FormatConvertedBitmap(image, PixelFormats.Bgr32, null, 0); opaque.Freeze();
+                        var shot = store.Add(opaque, "Clipboard");
+                        if (shot == null) Notify("That image is already on the line."); else Flash(shot, "Hung");
+                        return;
+                    }
+                }
+                if (DroppedAddress(data) != null) { HangDropped(data); return; }
+                string text = data.GetData(DataFormats.UnicodeText) as string;
+                if (String.IsNullOrWhiteSpace(text)) { Notify("Nothing on the clipboard to hang."); return; }
+                text = text.Trim();
+                if (text.Length > Store.MaxNoteText) text = text.Substring(0, Store.MaxNoteText);
+                // A note that was just copied from the line is not hung a second time.
+                var same = store.Notes.FirstOrDefault(x => String.Equals((x.Text ?? "").Trim(), text, StringComparison.Ordinal));
+                if (same != null)
+                {
+                    int at = Deck().FindIndex(x => Object.ReferenceEquals(x, same));
+                    if (at >= 0) { focus = at; Render(true); }
+                    Flash(same, "Already here"); return;
+                }
+                HangDropped(data);
+            }
+            catch (Exception ex) { store.Log("Hang clipboard", ex); Notify("Could not hang the clipboard."); }
         }
         void HangDropped(IDataObject data)
         {

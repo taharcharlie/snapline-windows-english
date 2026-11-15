@@ -108,7 +108,7 @@ namespace Snapline
 
         // ---- the peg ----
         DateTime pegGuardUntil;
-        void DressPeg(Panel card, object item)
+        void DressPeg(Panel card, object item, int number)
         {
             bool pressed = false;
             bool kept = IsKept(item);
@@ -126,6 +126,16 @@ namespace Snapline
             hit.MouseLeave += delegate { pressed = false; };
             hit.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; if (!pressed) return; pressed = false; RemoveWithUndo(item); };
             card.Children.Add(hit);
+            // The number to press after opening the line from the keyboard; hidden when the pointer is driving.
+            if (number >= 1 && number <= 9)
+                card.Children.Add(new Border
+                {
+                    // A solid tag on the card's corner, so it reads on any picture and is not washed out with unfocused cards.
+                    Tag = "PegNumber", Width = 24, Height = 24, Background = Brush(Theme.Accent), IsHitTestVisible = false,
+                    VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(8, 8, 0, 0),
+                    Visibility = lineKeys ? Visibility.Visible : Visibility.Collapsed,
+                    Child = new TextBlock { Text = number.ToString(), FontSize = Theme.Size(13), FontWeight = FontWeights.Bold, Foreground = Brush(Theme.Bg), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+                });
         }
 
         // ---- click, reorder, pull off ----

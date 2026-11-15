@@ -52,6 +52,7 @@ namespace Snapline
             UpdateShortcutMenu();
             menu.Items.Add("Open / close (auto-hide)", null, delegate { ToggleFromTray(); });
             menu.Items.Add("New note", null, delegate { NewNote(); });
+            menu.Items.Add("Hang the clipboard", null, delegate { HangClipboard(); }).ToolTipText = "Ctrl + Alt + D";
             menu.Items.Add("Import images…", null, delegate { ChooseFiles(); });
             var tensionMenu = new Forms.ToolStripMenuItem("Line tension");
             var tensions = new[] { new { Name = "Tight", Value = 15 }, new { Name = "Firm", Value = 55 }, new { Name = "Normal", Value = 100 }, new { Name = "Loose", Value = 150 }, new { Name = "Very loose", Value = 200 } };
@@ -62,6 +63,15 @@ namespace Snapline
             }
             tensionMenu.DropDownOpening += delegate { int now = (int)Math.Round(Slack * 100); foreach (Forms.ToolStripMenuItem item in tensionMenu.DropDownItems) item.Checked = (int)item.Tag == now; };
             menu.Items.Add(tensionMenu);
+            var clearMenu = new Forms.ToolStripMenuItem("Auto-clear old cards");
+            var ages = new[] { new { Name = "Never", Value = 0 }, new { Name = "After 1 day", Value = 1 }, new { Name = "After 7 days", Value = 7 }, new { Name = "After 30 days", Value = 30 } };
+            foreach (var choice in ages)
+            {
+                int value = choice.Value;
+                clearMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(choice.Name, null, delegate { SetAutoClear(value); }) { Tag = value });
+            }
+            clearMenu.DropDownOpening += delegate { foreach (Forms.ToolStripMenuItem item in clearMenu.DropDownItems) item.Checked = (int)item.Tag == store.Settings.AutoClearDays; };
+            menu.Items.Add(clearMenu);
             pinMenu = new Forms.ToolStripMenuItem("Keep visible", null, delegate { TogglePin(); });
             menu.Items.Add(pinMenu);
             menu.Opening += delegate { pinMenu.Checked = pinned; };
@@ -94,6 +104,25 @@ namespace Snapline
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { ToggleFromTray(); };
             tray.Visible = true;
+        }
+        void SetAutoClear(int days)
+        {
+            int due = store.Expired(days).Count;
+            if (due > 0)
+            {
+                dialogOpen = true;
+                try
+                {
+                    var answer = Forms.MessageBox.Show(due + (due == 1 ? " card is" : " cards are") + " already older than that and will be removed the next time the line is closed.\n\nKept cards (yellow peg) stay. Files behind reference cards are never touched.\n\nTurn this on?",
+                        "Auto-clear old cards", Forms.MessageBoxButtons.OKCancel, Forms.MessageBoxIcon.Warning, Forms.MessageBoxDefaultButton.Button2);
+                    if (answer != Forms.DialogResult.OK) return;
+                }
+                finally { dialogOpen = false; }
+            }
+            int before = store.Settings.AutoClearDays;
+            store.Settings.AutoClearDays = days;
+            try { store.SaveSettings(); } catch (Exception ex) { store.Settings.AutoClearDays = before; store.Log("Auto-clear setting", ex); Notify("Could not save that setting."); return; }
+            nextExpiry = DateTime.Now.AddSeconds(20);
         }
         void About()
         {
