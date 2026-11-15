@@ -27,6 +27,9 @@ namespace Snapline
         [DataMember] public DateTime Updated;
         [DataMember] public double Rank;
         [DataMember] public bool Kept;
+        // File name of the attached picture inside the NotePics folder; null when there is none.
+        [DataMember] public string Picture;
+        internal System.Windows.Media.Imaging.BitmapSource Thumb;
     }
     sealed partial class Store
     {
@@ -51,6 +54,7 @@ namespace Snapline
                     if (!Guid.TryParseExact(memo.Id, "N", out id)) memo.Id = Guid.NewGuid().ToString("N");
                     if (Notes.Any(x => x.Id == memo.Id)) continue;
                     memo.Color = MemoTheme.Normalize(memo.Color);
+                    if (!SafeNotePicture(memo.Picture)) memo.Picture = null;
                     if (memo.Created == DateTime.MinValue) memo.Created = DateTime.Now;
                     if (memo.Updated == DateTime.MinValue) memo.Updated = memo.Created;
                     Notes.Add(memo);
@@ -145,6 +149,7 @@ namespace Snapline
         readonly TextBox input;
         readonly TextBlock status, placeholder;
         readonly Border paper;
+        readonly StackPanel pictureRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
         readonly DispatcherTimer saveDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(480) };
         readonly Dictionary<string, Ellipse> swatches = new Dictionary<string, Ellipse>();
         string color;
@@ -163,6 +168,7 @@ namespace Snapline
                 Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), BlurRadius = 22, ShadowDepth = 6, Opacity = 0.20 } };
             outer.Children.Add(paper);
             var content = new Grid { Margin = new Thickness(25, 22, 25, 18) };
+            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -192,6 +198,7 @@ namespace Snapline
                 palette.Children.Add(choice);
             }
             Grid.SetRow(palette, 1); content.Children.Add(palette);
+            Grid.SetRow(pictureRow, 2); content.Children.Add(pictureRow);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 15) };
             writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("16", Theme.White)), CornerRadius = Theme.Radius(6) });
             var rules = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
@@ -209,20 +216,23 @@ namespace Snapline
                 Foreground = MemoTheme.Brush(Theme.Mid), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             writing.Children.Add(placeholder);
             input.TextChanged += delegate { placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; MarkDirty(); };
-            Grid.SetRow(writing, 2); content.Children.Add(writing);
+            Grid.SetRow(writing, 3); content.Children.Add(writing);
             var footer = new Grid();
             status = MemoTheme.Text("Saved automatically on this PC", 11, Theme.Text); status.VerticalAlignment = VerticalAlignment.Center; status.MaxWidth = 290; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Left; footer.Children.Add(status);
             var done = MemoTheme.Button("Done  ↵", "Finish editing the note"); done.Width = 92; done.HorizontalAlignment = HorizontalAlignment.Right;
             done.Background = MemoTheme.Brush(Theme.Panel); done.Foreground = MemoTheme.Brush(Theme.Light); done.BorderBrush = MemoTheme.Brush(Theme.Alpha("70", Theme.Mid)); done.BorderThickness = new Thickness(1);
             System.Windows.Automation.AutomationProperties.SetAutomationId(done, "NoteDone");
             done.ToolTip = "Ctrl+Enter or Esc closes and saves"; done.Click += delegate { Close(); }; footer.Children.Add(done);
-            Grid.SetRow(footer, 3); content.Children.Add(footer);
+            Grid.SetRow(footer, 4); content.Children.Add(footer);
             Content = outer;
-            UpdatePaper();
+            UpdatePaper(); UpdatePicture();
             saveDelay.Tick += delegate { saveDelay.Stop(); FlushChanges(); };
             Loaded += delegate { Activate(); input.Focus(); input.CaretIndex = input.Text.Length; };
             PreviewKeyDown += delegate(object sender, KeyEventArgs e)
             {
+                // Ctrl+V or Shift+Insert with a picture on the clipboard attaches it; with text it pastes as usual.
+                bool paste = (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control) || (e.Key == Key.Insert && Keyboard.Modifiers == ModifierKeys.Shift);
+                if (paste && PastePicture()) { e.Handled = true; return; }
                 if (e.Key == Key.Escape || (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)) { e.Handled = true; Close(); }
             };
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (!FlushChanges()) e.Cancel = true; };
@@ -233,6 +243,39 @@ namespace Snapline
             paper.Background = MemoTheme.Paper(color); paper.BorderBrush = MemoTheme.Brush(MemoTheme.Edge(color));
             if (input != null) input.CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color));
             foreach (var entry in swatches) entry.Value.Stroke = MemoTheme.Brush(entry.Key == color ? MemoTheme.Accent(color) : Theme.Alpha("40", Theme.White));
+        }
+        void UpdatePicture()
+        {
+            pictureRow.Children.Clear();
+            var thumb = store.NoteThumb(memo);
+            if (thumb == null)
+            {
+                pictureRow.Children.Add(new TextBlock { Text = "Copy an image, then Ctrl+V here to add a picture", FontSize = Theme.Size(11), Foreground = MemoTheme.Brush(Theme.Mid) });
+                return;
+            }
+            pictureRow.Children.Add(new Border { BorderBrush = MemoTheme.Brush(Theme.Rule), BorderThickness = new Thickness(1), Background = MemoTheme.Brush(Theme.Inset),
+                Child = new Image { Source = thumb, Height = 78, MaxWidth = 300, Stretch = Stretch.Uniform } });
+            var remove = MemoTheme.Button("Remove picture", "Remove the picture from this note"); remove.Margin = new Thickness(12, 0, 0, 0); remove.VerticalAlignment = VerticalAlignment.Bottom;
+            System.Windows.Automation.AutomationProperties.SetAutomationId(remove, "NoteRemovePicture");
+            remove.Click += delegate
+            {
+                try { store.SetNotePicture(memo, null); status.Text = "Picture removed"; status.Foreground = MemoTheme.Brush(Theme.Text); }
+                catch (Exception ex) { store.Log("Remove note picture", ex); status.Text = "Could not remove the picture. Try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); }
+                UpdatePicture(); input.Focus();
+            };
+            pictureRow.Children.Add(remove);
+        }
+        // True when the clipboard held a picture, whether or not it could be attached.
+        bool PastePicture()
+        {
+            System.Windows.Media.Imaging.BitmapSource image;
+            try { image = NotePictures.FromClipboard(); }
+            catch (Exception ex) { store.Log("Read picture from clipboard", ex); return false; }
+            if (image == null) return false;
+            try { store.SetNotePicture(memo, image); status.Text = "Picture added"; status.Foreground = MemoTheme.Brush(Theme.Text); }
+            catch (Exception ex) { store.Log("Add note picture", ex); status.Text = "Could not add that picture. Try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); }
+            UpdatePicture();
+            return true;
         }
         void MarkDirty()
         {
@@ -253,7 +296,7 @@ namespace Snapline
                 store.Log("Save memo", ex); status.Text = "Could not save. Your text is kept in this window; try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); return false;
             }
         }
-        internal bool IsBlank { get { return String.IsNullOrWhiteSpace(input.Text); } }
+        internal bool IsBlank { get { return String.IsNullOrWhiteSpace(input.Text) && memo.Picture == null; } }
     }
 
     sealed partial class Shelf
@@ -311,6 +354,8 @@ namespace Snapline
             double width = Math.Max(200, Math.Min(360, screen.WorkingArea.Width / Dpi() - 60));
             var content = new StackPanel { Width = width };
             var title = MemoTheme.Text("Note", 13, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
+            var picture = new Image { MaxHeight = 230, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
+            content.Children.Add(picture);
             var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, Theme.Light);
             text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -326,6 +371,19 @@ namespace Snapline
             {
                 if (!HoverPreviewAllowed || !store.Notes.Contains(note)) { tip.IsOpen = false; return; }
                 CloseNotePreview(); CloseImagePreview(); if (helpTip != null) helpTip.IsOpen = false; noteTip = tip;
+                string file = store.NotePicturePath(note);
+                if (file != null && picture.Source == null)
+                {
+                    try
+                    {
+                        if (File.Exists(file))
+                        {
+                            picture.Source = Store.Load(file); picture.Visibility = Visibility.Visible;
+                            if (String.IsNullOrWhiteSpace(note.Text)) scroll.Visibility = Visibility.Collapsed;
+                        }
+                    }
+                    catch (Exception ex) { store.Log("Show note picture", ex); }
+                }
             };
             tip.Closed += delegate { if (Object.ReferenceEquals(noteTip, tip)) noteTip = null; lastInside = DateTime.Now; };
             return tip;
@@ -351,7 +409,19 @@ namespace Snapline
             var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 15, Theme.Light);
             body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = 22;
             body.Margin = new Thickness(0, 9, 0, 5); body.ClipToBounds = true;
-            Grid.SetRow(body, 1); details.Children.Add(body);
+            var thumb = store.NoteThumb(note);
+            if (thumb == null) { Grid.SetRow(body, 1); details.Children.Add(body); }
+            else
+            {
+                bool wordless = String.IsNullOrWhiteSpace(note.Text);
+                var middle = new DockPanel { Margin = new Thickness(0, 8, 0, 4), LastChildFill = true };
+                var frame = new Border { Height = wordless ? 88 : 50, ClipToBounds = true, Background = MemoTheme.Brush(Theme.Inset),
+                    Child = new Image { Source = thumb, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+                DockPanel.SetDock(frame, Dock.Top); middle.Children.Add(frame);
+                if (wordless) body.Visibility = Visibility.Collapsed; else body.Margin = new Thickness(0, 5, 0, 0);
+                middle.Children.Add(body);
+                Grid.SetRow(middle, 1); details.Children.Add(middle);
+            }
             var footer = MemoTheme.Text("Double-click to edit", 11, Theme.Dim); Grid.SetRow(footer, 2); details.Children.Add(footer);
             grid.Children.Add(details);
             AddHangingPeg(grid);
@@ -360,6 +430,7 @@ namespace Snapline
             remove.HorizontalAlignment = HorizontalAlignment.Right; remove.VerticalAlignment = VerticalAlignment.Top; remove.Margin = new Thickness(0, -9, -8, 0); remove.Opacity = 0; remove.IsHitTestVisible = false;
             remove.Click += delegate { DeleteNote(note); }; grid.Children.Add(remove);
             var menu = new ContextMenu(); menu.Items.Add(Item("Edit note", delegate { EditNote(note, false); })); menu.Items.Add(Item("Copy text", delegate { CopyNote(note); }));
+            if (note.Picture != null) menu.Items.Add(Item("Copy picture", delegate { CopyNotePicture(note); }));
             menu.Items.Add(Item(note.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(note); }));
             menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note", delegate { DeleteNote(note); }));
             menu.Opened += delegate { CloseNotePreview(); dialogOpen = true; }; menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; }; grid.ContextMenu = menu;

@@ -96,8 +96,9 @@ namespace Snapline
         // The removal becomes permanent: a removed screenshot's saved copy is deleted now.
         void FinishUndo()
         {
-            var shot = undoItem as Shot; undoItem = null;
+            var shot = undoItem as Shot; var note = undoItem as Memo; undoItem = null;
             if (shot != null) store.Discard(shot);
+            if (note != null && note.Picture != null) store.SweepNotePictures(null); // The note is gone for good, so its picture goes too.
         }
         void ToggleKeep(object item)
         {
@@ -126,6 +127,8 @@ namespace Snapline
             hit.MouseLeave += delegate { pressed = false; };
             hit.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; if (!pressed) return; pressed = false; RemoveWithUndo(item); };
             card.Children.Add(hit);
+            // A kept card wears an accent edge as well as the accent peg, so it is easy to pick out.
+            if (kept) card.Children.Add(new Border { BorderBrush = Brush(Theme.Accent), BorderThickness = new Thickness(2), IsHitTestVisible = false, Tag = "KeptEdge" });
             // The number to press after opening the line from the keyboard; hidden when the pointer is driving.
             if (number >= 1 && number <= 9)
                 card.Children.Add(new Border
@@ -148,6 +151,10 @@ namespace Snapline
             var shot = item as Shot; var memo = item as Memo;
             bool down = false, held = false, reorder = false;
             Point start = new Point(); double grabX = 0;
+            // A note waits for a possible second click before it copies, so that opening a note to paste something
+            // into it does not first replace what is on the clipboard.
+            var clickDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(System.Windows.Forms.SystemInformation.DoubleClickTime + 20) };
+            clickDelay.Tick += delegate { clickDelay.Stop(); if (memo != null && store.Notes.Contains(memo) && !dialogOpen && !dragging) Activate(item); };
             var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
             hold.Tick += delegate { hold.Stop(); if (down && !reorder && shot != null) { held = true; down = false; card.ReleaseMouseCapture(); Edit(shot); } };
             card.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
@@ -155,7 +162,7 @@ namespace Snapline
                 e.Handled = true; CloseImagePreview(); CloseNotePreview();
                 if (e.ClickCount == 2)
                 {
-                    hold.Stop(); down = false; card.ReleaseMouseCapture();
+                    hold.Stop(); clickDelay.Stop(); down = false; card.ReleaseMouseCapture();
                     OpenItem(item);
                     return;
                 }
@@ -189,7 +196,8 @@ namespace Snapline
             {
                 hold.Stop(); bool wasDown = down, wasReorder = reorder; down = reorder = false; card.ReleaseMouseCapture(); e.Handled = true;
                 if (wasReorder) { EndReorder(card, true); return; }
-                if (wasDown && !held) Activate(item);
+                if (!wasDown || held) return;
+                if (memo != null) { clickDelay.Stop(); clickDelay.Start(); } else Activate(item);
             };
             card.LostMouseCapture += delegate { hold.Stop(); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
         }

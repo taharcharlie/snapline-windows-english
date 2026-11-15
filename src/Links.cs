@@ -99,6 +99,7 @@ namespace Snapline
                 }
                 catch (Exception ex) { Log("Auto-clear card", ex); }
             }
+            if (count > 0) SweepNotePictures(null);
             return count;
         }
         void RestoreLinks()

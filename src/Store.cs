@@ -85,6 +85,7 @@ namespace Snapline
             if (Settings.CaptureShortcut == "Custom" && ShortcutSpec.Validate(Settings.CustomCaptureModifiers, Settings.CustomCaptureKey) != null)
                 Settings.CaptureShortcut = "CtrlB";
             RestoreNotes();
+            SweepNotePictures(null); // Pictures left behind by notes deleted in an earlier run.
             RestoreLinks();
             var saved = Read<List<Shot>>(Path.Combine(Root, "items.json")) ?? new List<Shot>();
             int loose = 0;

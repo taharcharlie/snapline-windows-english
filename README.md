@@ -12,9 +12,10 @@ Everything runs on your PC. The app has no network code, uploads nothing, and do
 - Dark, square Ashes theme with the Barlow Condensed font (falls back to Segoe UI if it is not installed).
 - The line hangs from a [komorebi-bar](https://github.com/LGUG2Z/komorebi) at the top of the screen when one is running, and its tension is adjustable.
 - The line rolls: any number of cards, with the focused card enlarged, driven by wheel, drag or keyboard.
-- Reorder by dragging, pull a card off to drop it elsewhere, delete on a peg or a bin, with Undo. "Keep" protects a card from every kind of clearing.
+- Reorder by dragging, pull a card off to drop it elsewhere, delete on a peg or a bin, with Undo. "Keep" protects a card from every kind of clearing and gives it a yellow edge.
 - Files, folders and web addresses hang as reference cards. The original is never moved, changed or deleted.
 - Hang the clipboard with one shortcut; copy a card by its number.
+- A note can carry one picture: copy an image, open the note and press `Ctrl+V`.
 - Optional auto-clear of old cards.
 - Start at login is off until you turn it on.
 - The cards hang still and skip the falling animation on battery, or when Windows animations are off.
@@ -39,6 +40,7 @@ While the line is open from `Ctrl+Alt+S`, these plain keys go to Snapline rather
 
 - Touch the line at the top centre of the screen to open it. It hides when you leave.
 - Click a card to copy it. Double-click to open it (a note opens for editing).
+- A note copies a moment after the click, so double-clicking one to paste into it leaves the clipboard alone.
 - Scroll, or swipe sideways, to roll the line.
 - Drag a card along the line to reorder.
 - Pull a card down to take it off the line: drop it into another app, or on the Tips card to delete it.
