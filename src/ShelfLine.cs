@@ -513,7 +513,9 @@ namespace Snapline
             double lean = Lean(new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5]);
             double cardWidth = width;
             var swing = new RotateTransform(lean, cardWidth / 2, -15);
-            var card = new Grid { Width = cardWidth, Height = height + RemarkStripHeight, RenderTransform = swing, Tag = shot };
+            // Slightly larger than its contents. At 125% scaling the contents round up to a fraction more than an
+            // exactly-fitting card, and WPF then clips the card to its bounds, which cut off the peg above it.
+            var card = new Grid { Width = cardWidth + 1, Height = height + RemarkStripHeight + 2, RenderTransform = swing, Tag = shot };
             card.Children.Add(new Border
             {
                 CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel), IsHitTestVisible = false,
@@ -549,7 +551,6 @@ namespace Snapline
                 Child = new Image { Source = shot.Thumb, Stretch = Stretch.Uniform }
             };
             grid.Children.Add(frame);
-            AddHangingPeg(grid);
             var remove = new Button
             {
                 Content = "×", Width = 19, Height = 19, FontSize = Theme.Size(13),
@@ -588,6 +589,8 @@ namespace Snapline
             grid.ContextMenu = ShotMenu(shot);
             card.Children.Add(grid);
             card.Children.Add(RemarkStrip(shot, cardWidth, height));
+            // On the outer card, like notes: inside the nested image grid WPF clips it away.
+            AddHangingPeg(card);
             Place(card, center - cardWidth / 2, y);
         }
     }

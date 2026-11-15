@@ -48,7 +48,8 @@ namespace Snapline
             return shot != null ? shot.Kept : memo != null && memo.Kept;
         }
         // Takes a card off the line. It can be brought back until the Undo notice goes away.
-        internal void RemoveWithUndo(object item)
+        // `fall` plays the falling-paper animation; a card dropped on the bin is already off the rope, so it does not fall.
+        internal void RemoveWithUndo(object item, bool fall = true)
         {
             var shot = item as Shot; var memo = item as Memo;
             if (shot == null && memo == null) return;
@@ -58,7 +59,8 @@ namespace Snapline
                 int index = shot != null ? store.Items.IndexOf(shot) : store.Notes.IndexOf(memo);
                 if (index < 0) return;
                 FinishUndo(); // Only the latest removal can be undone.
-                RemoveWithFlight(HangingElement(item), delegate { if (shot != null) store.Detach(shot); else store.RemoveNote(memo); });
+                Action commit = delegate { if (shot != null) store.Detach(shot); else store.RemoveNote(memo); };
+                if (fall) RemoveWithFlight(HangingElement(item), commit); else commit();
                 undoItem = item; undoIndex = index;
                 undoUntil = DateTime.Now.AddSeconds(7); keepUntil = undoUntil; lastInside = DateTime.Now;
                 toast = ""; UpdateToast();
@@ -101,7 +103,7 @@ namespace Snapline
             var hit = new Border
             {
                 // Almost, not fully, transparent: a see-through window lets clicks fall through fully transparent pixels.
-                Width = 22, Height = 28, Background = Brush(Theme.Alpha("01", Theme.Bg)), Tag = "HangingPeg", Cursor = Cursors.Hand,
+                Width = 22, Height = 28, Background = Brush(Theme.Alpha("0C", Theme.Bg)), Tag = "HangingPeg", Cursor = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -24, 0, 0),
                 ToolTip = kept ? "Kept: stays on the line" : "Unclip to delete (Undo appears)"
             };
@@ -229,7 +231,7 @@ namespace Snapline
                 follow = delegate { if (ghost != null) ghost.Follow(); };
                 card.GiveFeedback += follow;
                 var result = DragDrop.DoDragDrop(card, data, shot != null ? DragDropEffects.Copy | DragDropEffects.Move : DragDropEffects.Copy);
-                if (binDrop) RemoveWithUndo(item);
+                if (binDrop) RemoveWithUndo(item, false);
                 else if (shot != null && (result == DragDropEffects.Move || !System.IO.File.Exists(store.FullPath(shot)))) store.Remove(shot);
             }
             catch (Exception ex) { store.Log("Drag card", ex); Notify("Drag did not complete. Right-click the card for other ways to copy it."); }
