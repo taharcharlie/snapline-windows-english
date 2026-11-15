@@ -37,10 +37,10 @@ namespace Snapline
             if (!File.Exists(file)) return;
             try
             {
-                if (new FileInfo(file).Length > 32L * 1024 * 1024) throw new InvalidDataException("便签文件过大。");
+                if (new FileInfo(file).Length > 32L * 1024 * 1024) throw new InvalidDataException("The notes file is too large.");
                 List<Memo> saved;
                 using (var stream = File.OpenRead(file)) saved = (List<Memo>)new DataContractJsonSerializer(typeof(List<Memo>)).ReadObject(stream);
-                if (saved == null) throw new InvalidDataException("便签文件格式错误。");
+                if (saved == null) throw new InvalidDataException("The notes file is not in a valid format.");
                 foreach (var memo in saved)
                 {
                     if (memo == null) continue;
@@ -58,13 +58,13 @@ namespace Snapline
         }
         void SaveNotes()
         {
-            if (notesUnreadable) throw new InvalidOperationException("原便签文件暂时无法读取，已保留原记录。请先恢复 notes.json 后重启。");
+            if (notesUnreadable) throw new InvalidOperationException("The notes file could not be read, so it was left untouched. Restore notes.json and restart.");
             Write(System.IO.Path.Combine(Root, "notes.json"), Notes);
         }
         internal Memo AddNote(string text, string color)
         {
             if (text == null) text = "";
-            if (text.Length > MaxNoteText) throw new InvalidOperationException("便签最多支持 20000 个字符。");
+            if (text.Length > MaxNoteText) throw new InvalidOperationException("A note can hold up to 20000 characters.");
             var memo = new Memo { Id = Guid.NewGuid().ToString("N"), Text = text, Color = MemoTheme.Normalize(color), Created = DateTime.Now, Updated = DateTime.Now };
             Notes.Insert(0, memo);
             try { SaveNotes(); } catch { Notes.Remove(memo); throw; }
@@ -73,9 +73,9 @@ namespace Snapline
         }
         internal void UpdateNote(Memo memo, string text, string color)
         {
-            if (!Notes.Contains(memo)) throw new InvalidOperationException("这张便签已被删除。");
+            if (!Notes.Contains(memo)) throw new InvalidOperationException("This note has been deleted.");
             if (text == null) text = "";
-            if (text.Length > MaxNoteText) throw new InvalidOperationException("便签最多支持 20000 个字符。");
+            if (text.Length > MaxNoteText) throw new InvalidOperationException("A note can hold up to 20000 characters.");
             color = MemoTheme.Normalize(color);
             if (memo.Text == text && memo.Color == color) return;
             string oldText = memo.Text, oldColor = memo.Color;
@@ -142,7 +142,7 @@ namespace Snapline
         internal MemoEditor(Store data, Memo note)
         {
             store = data; memo = note; color = note.Color;
-            Title = "编辑便签 · 截图晾台"; Width = 524; Height = 462;
+            Title = "Edit note · Snapline"; Width = 524; Height = 462;
             ShowInTaskbar = false; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -160,23 +160,23 @@ namespace Snapline
             outer.Children.Add(content);
             var heading = new Grid { Margin = new Thickness(0, 0, 0, 16) };
             var title = new StackPanel();
-            title.Children.Add(MemoTheme.Text("随手记", 22, "#514A36"));
-            title.Children.Add(new TextBlock { Text = "把想到的事，轻轻挂在这里。", FontSize = 11, Foreground = MemoTheme.Brush("#9A8E6A"), Margin = new Thickness(0, 6, 0, 0) });
+            title.Children.Add(MemoTheme.Text("Quick note", 22, "#514A36"));
+            title.Children.Add(new TextBlock { Text = "Hang a thought here.", FontSize = 11, Foreground = MemoTheme.Brush("#9A8E6A"), Margin = new Thickness(0, 6, 0, 0) });
             title.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) { if (e.ClickCount == 1) DragMove(); };
             heading.Children.Add(title);
-            var close = MemoTheme.Button("×", "收起便签编辑窗口"); close.Width = 30; close.Height = 30; close.FontSize = 20;
+            var close = MemoTheme.Button("×", "Close the note editor"); close.Width = 30; close.Height = 30; close.FontSize = 20;
             close.Padding = new Thickness(0); close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top;
             close.Click += delegate { Close(); }; heading.Children.Add(close);
             content.Children.Add(heading);
             var palette = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
-            palette.Children.Add(new TextBlock { Text = "纸色", FontSize = 11, Foreground = MemoTheme.Brush("#93856A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 8) });
+            palette.Children.Add(new TextBlock { Text = "Paper", FontSize = 11, Foreground = MemoTheme.Brush("#93856A"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 8) });
             for (int i = 0; i < MemoTheme.Colors.Length; i++)
             {
                 string mode = MemoTheme.Colors[i];
-                string label = new[] { "暖黄", "薄荷绿", "淡紫" }[i];
+                string label = new[] { "Butter", "Mint", "Lavender" }[i];
                 var circle = new Ellipse { Width = 21, Height = 21, Fill = MemoTheme.Brush(MemoTheme.Bottom(mode)), StrokeThickness = 2 };
                 swatches.Add(mode, circle);
-                var choice = MemoTheme.Button("", label + "纸色"); choice.Content = circle; choice.Width = 32; choice.Height = 32; choice.Padding = new Thickness(0); choice.Margin = new Thickness(0, 0, 4, 0); choice.ToolTip = label;
+                var choice = MemoTheme.Button("", label + "Paper"); choice.Content = circle; choice.Width = 32; choice.Height = 32; choice.Padding = new Thickness(0); choice.Margin = new Thickness(0, 0, 4, 0); choice.ToolTip = label;
                 System.Windows.Automation.AutomationProperties.SetAutomationId(choice, "NoteColor-" + mode);
                 choice.Click += delegate { color = mode; UpdatePaper(); MarkDirty(); };
                 palette.Children.Add(choice);
@@ -193,19 +193,19 @@ namespace Snapline
                 FontSize = 15, Foreground = MemoTheme.Brush("#514C3C"), CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color)) };
             TextBlock.SetLineHeight(input, 25);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "NoteText");
-            System.Windows.Automation.AutomationProperties.SetName(input, "便签内容");
+            System.Windows.Automation.AutomationProperties.SetName(input, "Note text");
             writing.Children.Add(input);
-            placeholder = new TextBlock { Text = "记下一件事、一个想法，\n或今天想完成的小目标…", FontSize = 15, LineHeight = 25,
+            placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…", FontSize = 15, LineHeight = 25,
                 Foreground = MemoTheme.Brush("#AD9E78"), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             writing.Children.Add(placeholder);
             input.TextChanged += delegate { placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; MarkDirty(); };
             Grid.SetRow(writing, 2); content.Children.Add(writing);
             var footer = new Grid();
-            status = MemoTheme.Text("自动保存到本机", 11, "#978A68"); status.VerticalAlignment = VerticalAlignment.Center; status.MaxWidth = 290; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Left; footer.Children.Add(status);
-            var done = MemoTheme.Button("完成  ↵", "完成便签编辑"); done.Width = 92; done.HorizontalAlignment = HorizontalAlignment.Right;
+            status = MemoTheme.Text("Saved automatically on this PC", 11, "#978A68"); status.VerticalAlignment = VerticalAlignment.Center; status.MaxWidth = 290; status.TextWrapping = TextWrapping.Wrap; status.HorizontalAlignment = HorizontalAlignment.Left; footer.Children.Add(status);
+            var done = MemoTheme.Button("Done  ↵", "Finish editing the note"); done.Width = 92; done.HorizontalAlignment = HorizontalAlignment.Right;
             done.Background = MemoTheme.Brush("#FFFDF8"); done.Foreground = MemoTheme.Brush("#756341"); done.BorderBrush = MemoTheme.Brush("#70C7B17A"); done.BorderThickness = new Thickness(1);
             System.Windows.Automation.AutomationProperties.SetAutomationId(done, "NoteDone");
-            done.ToolTip = "Ctrl+Enter 或 Esc 收起，内容会保存"; done.Click += delegate { Close(); }; footer.Children.Add(done);
+            done.ToolTip = "Ctrl+Enter or Esc closes and saves"; done.Click += delegate { Close(); }; footer.Children.Add(done);
             Grid.SetRow(footer, 3); content.Children.Add(footer);
             Content = outer;
             UpdatePaper();
@@ -226,7 +226,7 @@ namespace Snapline
         }
         void MarkDirty()
         {
-            dirty = true; status.Text = "正在保存…"; status.Foreground = MemoTheme.Brush("#978A68");
+            dirty = true; status.Text = "Saving…"; status.Foreground = MemoTheme.Brush("#978A68");
             saveDelay.Stop(); saveDelay.Start();
         }
         internal bool FlushChanges()
@@ -236,11 +236,11 @@ namespace Snapline
             try
             {
                 store.UpdateNote(memo, input.Text, color);
-                dirty = false; status.Text = "已保存 · " + DateTime.Now.ToString("HH:mm"); status.Foreground = MemoTheme.Brush("#859064"); return true;
+                dirty = false; status.Text = "Saved · " + DateTime.Now.ToString("HH:mm"); status.Foreground = MemoTheme.Brush("#859064"); return true;
             }
             catch (Exception ex)
             {
-                store.Log("Save memo", ex); status.Text = "未能保存，窗口会保留内容，请稍后重试。"; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
+                store.Log("Save memo", ex); status.Text = "Could not save. Your text is kept in this window; try again shortly."; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
             }
         }
         internal bool IsBlank { get { return String.IsNullOrWhiteSpace(input.Text); } }
@@ -281,15 +281,15 @@ namespace Snapline
         }
         void CopyNote(Memo note)
         {
-            try { SetClipboard(new DataObject(DataFormats.UnicodeText, note.Text)); Notify("便签文字已复制。"); }
-            catch (Exception ex) { store.Log("Copy memo", ex); Notify("复制失败，请稍后重试。"); }
+            try { SetClipboard(new DataObject(DataFormats.UnicodeText, note.Text)); Notify("Note text copied."); }
+            catch (Exception ex) { store.Log("Copy memo", ex); Notify("Copy failed. Try again shortly."); }
         }
         void DeleteNote(Memo note)
         {
             CloseNotePreview(); dialogOpen = true;
             try
             {
-                if (MessageBox.Show(this, "删除这张便签？内容将不会保留。", "删除便签", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                if (MessageBox.Show(this, "Delete this note? Its text will not be kept.", "Delete note", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                     RemoveMemo(note);
             }
             catch (Exception ex) { store.Log("Delete memo", ex); Notify(ex.Message); }
@@ -305,18 +305,18 @@ namespace Snapline
             double maxHeight = Math.Max(90, Math.Min(440, screen.WorkingArea.Height / Dpi() - 315));
             double width = Math.Max(200, Math.Min(360, screen.WorkingArea.Width / Dpi() - 60));
             var content = new StackPanel { Width = width };
-            var title = MemoTheme.Text("便签", 13, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
-            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "还没有内容，双击写点什么。" : note.Text, 14, "#534F41");
+            var title = MemoTheme.Text("Note", 13, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
+            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, "#534F41");
             text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             content.Children.Add(scroll);
-            content.Children.Add(new TextBlock { Text = "双击编辑 · 右键复制或删除", FontSize = 11, Foreground = MemoTheme.Brush("#988D71"), Margin = new Thickness(0, 13, 0, 0) });
+            content.Children.Add(new TextBlock { Text = "Double-click to edit · Right-click to copy or delete", FontSize = 11, Foreground = MemoTheme.Brush("#988D71"), Margin = new Thickness(0, 13, 0, 0) });
             var tip = new ToolTip { Content = new Border { Child = content, Padding = new Thickness(18), CornerRadius = new CornerRadius(9), Background = MemoTheme.Paper(note.Color),
                     BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1) },
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HasDropShadow = true,
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, PlacementTarget = target,
                 HorizontalOffset = (target.Width - width - 38) / 2, VerticalOffset = 10, FontFamily = FontFamily };
-            System.Windows.Automation.AutomationProperties.SetName(tip, "便签全文");
+            System.Windows.Automation.AutomationProperties.SetName(tip, "Full note");
             tip.Opened += delegate
             {
                 if (!HoverPreviewAllowed || !store.Notes.Contains(note)) { tip.IsOpen = false; return; }
@@ -331,7 +331,7 @@ namespace Snapline
             double lean = new[] { -2.4, 1.6, -1.1, 2.2 }[index % 4];
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, Cursor = Cursors.Hand, RenderTransform = swing, Tag = note };
-            System.Windows.Automation.AutomationProperties.SetName(grid, "便签 " + (note.Text.Length > 30 ? note.Text.Substring(0, 30) : note.Text));
+            System.Windows.Automation.AutomationProperties.SetName(grid, "Note " + (note.Text.Length > 30 ? note.Text.Substring(0, 30) : note.Text));
             System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "NoteCard-" + note.Id);
             grid.Children.Add(new Border { Background = MemoTheme.Paper(note.Color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(0.6), CornerRadius = new CornerRadius(3),
                 Effect = new DropShadowEffect { Color = MemoTheme.Hex("#555D6B"), Opacity = 0.16, ShadowDepth = 4, BlurRadius = 9 } });
@@ -339,25 +339,25 @@ namespace Snapline
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             details.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var header = new Grid(); header.Children.Add(MemoTheme.Text("便签", 10, MemoTheme.Accent(note.Color)));
-            var date = MemoTheme.Text(note.Created.ToString("M月d日"), 9, "#AB9C79"); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
+            var header = new Grid(); header.Children.Add(MemoTheme.Text("Note", 10, MemoTheme.Accent(note.Color)));
+            var date = MemoTheme.Text(note.Created.ToString("MMM d"), 9, "#AB9C79"); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
             details.Children.Add(header);
-            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "双击，写下第一件事…" : note.Text, 13, "#5D5541");
+            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 13, "#5D5541");
             body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = 22;
             body.Margin = new Thickness(0, 9, 0, 5); body.ClipToBounds = true;
             Grid.SetRow(body, 1); details.Children.Add(body);
-            var footer = MemoTheme.Text("双击编辑", 9, MemoTheme.Accent(note.Color)); footer.Opacity = 0.75; Grid.SetRow(footer, 2); details.Children.Add(footer);
+            var footer = MemoTheme.Text("Double-click to edit", 9, MemoTheme.Accent(note.Color)); footer.Opacity = 0.75; Grid.SetRow(footer, 2); details.Children.Add(footer);
             grid.Children.Add(details);
             grid.Children.Add(new Polygon { Points = new PointCollection { new Point(width - 20, height), new Point(width - 20, height - 20), new Point(width, height - 20) },
                 Fill = MemoTheme.Brush(MemoTheme.Edge(note.Color)), Opacity = 0.48, IsHitTestVisible = false });
             grid.Children.Add(new Line { X1 = width - 20, Y1 = height, X2 = width, Y2 = height - 20, Stroke = MemoTheme.Brush(MemoTheme.Edge(note.Color)), StrokeThickness = 0.7, IsHitTestVisible = false });
             AddHangingPeg(grid);
-            var remove = MemoTheme.Button("×", "删除便签"); remove.Width = 21; remove.Height = 21; remove.FontSize = 16; remove.Padding = new Thickness(0); remove.Background = MemoTheme.Brush("#DDFFFDF5");
+            var remove = MemoTheme.Button("×", "Delete note"); remove.Width = 21; remove.Height = 21; remove.FontSize = 16; remove.Padding = new Thickness(0); remove.Background = MemoTheme.Brush("#DDFFFDF5");
             remove.Tag = "DeleteButton";
             remove.HorizontalAlignment = HorizontalAlignment.Right; remove.VerticalAlignment = VerticalAlignment.Top; remove.Margin = new Thickness(0, -9, -8, 0); remove.Opacity = 0; remove.IsHitTestVisible = false;
             remove.Click += delegate { DeleteNote(note); }; grid.Children.Add(remove);
-            var menu = new ContextMenu(); menu.Items.Add(Item("编辑便签", delegate { EditNote(note, false); })); menu.Items.Add(Item("复制文字", delegate { CopyNote(note); }));
-            menu.Items.Add(new Separator()); menu.Items.Add(Item("删除便签…", delegate { DeleteNote(note); }));
+            var menu = new ContextMenu(); menu.Items.Add(Item("Edit note", delegate { EditNote(note, false); })); menu.Items.Add(Item("Copy text", delegate { CopyNote(note); }));
+            menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note…", delegate { DeleteNote(note); }));
             menu.Opened += delegate { CloseNotePreview(); }; grid.ContextMenu = menu;
             grid.ToolTip = NotePopup(note, grid); ToolTipService.SetInitialShowDelay(grid, 280); ToolTipService.SetBetweenShowDelay(grid, 100); ToolTipService.SetShowDuration(grid, 60000);
             RegisterHoverPreview(grid);

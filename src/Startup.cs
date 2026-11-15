@@ -48,9 +48,9 @@ namespace Snapline
         {
             string path = Path.GetFullPath(executable);
             if (path.IndexOf('"') >= 0 || !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("启动程序路径无效。");
+                throw new InvalidOperationException("The program path is not valid.");
             string command = "\"" + path + "\" --startup";
-            if (command.Length > 260) throw new InvalidOperationException("程序路径过长，请解压到较短路径后重新启用开机启动。");
+            if (command.Length > 260) throw new InvalidOperationException("The program path is too long. Move it to a shorter path and enable start at login again.");
             return command;
         }
         internal bool Initialize(out string error)
@@ -89,7 +89,7 @@ namespace Snapline
                     catch (Exception rollback) { store.Log("Restore startup registration", rollback); }
                 }
                 store.Log("Set startup registration", ex);
-                error = "开机启动设置未保存：" + ex.Message;
+                error = "Start at login was not saved: " + ex.Message;
                 return false;
             }
         }

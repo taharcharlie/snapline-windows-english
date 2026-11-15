@@ -22,9 +22,9 @@ namespace Snapline
         internal Action<Shot> RemarkChanged;
         internal void UpdateRemark(Shot shot, string text)
         {
-            if (!Items.Contains(shot)) throw new InvalidOperationException("这张截图已被移除。");
+            if (!Items.Contains(shot)) throw new InvalidOperationException("This screenshot has been removed.");
             text = (text ?? "").Trim();
-            if (text.Length > MaxRemarkText) throw new InvalidOperationException("截图备注最多支持 2000 个字符。");
+            if (text.Length > MaxRemarkText) throw new InvalidOperationException("A caption can hold up to 2000 characters.");
             if ((shot.Remark ?? "") == text) return;
             string previous = shot.Remark;
             shot.Remark = text;
@@ -56,7 +56,7 @@ namespace Snapline
         {
             this.store = store; this.shot = shot; this.anchor = anchor;
             Persist = delegate(string value) { store.UpdateRemark(shot, value); }; PointerInside = ContainsPointer;
-            Title = "截图备注 · 截图晾台"; Width = 376; Height = 238;
+            Title = "Caption · Snapline"; Width = 376; Height = 238;
             ShowInTaskbar = false; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true;
             WindowStartupLocation = WindowStartupLocation.Manual;
@@ -71,9 +71,9 @@ namespace Snapline
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var heading = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-            var title = MemoTheme.Text("这张截图，用来做什么？", 16, "#625435");
+            var title = MemoTheme.Text("What is this screenshot for?", 16, "#625435");
             title.FontWeight = FontWeights.SemiBold; title.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(title);
-            var close = MemoTheme.Button("×", "取消截图备注编辑"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = 19;
+            var close = MemoTheme.Button("×", "Cancel caption editing"); close.Width = 26; close.Height = 26; close.Padding = new Thickness(0); close.FontSize = 19;
             close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += delegate { Close(); }; heading.Children.Add(close); content.Children.Add(heading);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 5) };
             writing.Children.Add(new Border { Background = MemoTheme.Brush("#66FFFFFF"), CornerRadius = new CornerRadius(6),
@@ -83,19 +83,19 @@ namespace Snapline
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0), Padding = new Thickness(10, 8, 10, 8), FontSize = 13,
                 Foreground = Brushes.Black, CaretBrush = MemoTheme.Brush("#AC8D3F") };
-            AutomationProperties.SetAutomationId(Input, "RemarkInput"); AutomationProperties.SetName(Input, "截图用途备注");
+            AutomationProperties.SetAutomationId(Input, "RemarkInput"); AutomationProperties.SetName(Input, "Screenshot caption");
             TextBlock.SetLineHeight(Input, 21);
             writing.Children.Add(Input);
-            var placeholder = MemoTheme.Text("例如：周五做方案时，参考这个布局。", 12, "#AB9C78");
+            var placeholder = MemoTheme.Text("e.g. Use this layout for the Friday proposal.", 12, "#AB9C78");
             placeholder.TextWrapping = TextWrapping.Wrap; placeholder.Margin = new Thickness(11, 10, 8, 0); placeholder.IsHitTestVisible = false;
             placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; writing.Children.Add(placeholder);
-            Input.TextChanged += delegate { placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; status.Text = "Enter 保存 · Shift+Enter 换行 · Esc 取消"; status.Foreground = MemoTheme.Brush("#9B8C65"); ResumeEditing(); };
+            Input.TextChanged += delegate { placeholder.Visibility = Input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; status.Text = "Enter saves · Shift+Enter new line · Esc cancels"; status.Foreground = MemoTheme.Brush("#9B8C65"); ResumeEditing(); };
             Grid.SetRow(writing, 1); content.Children.Add(writing);
-            status = MemoTheme.Text("Enter 保存 · Shift+Enter 换行 · Esc 取消", 10, "#9B8C65");
+            status = MemoTheme.Text("Enter saves · Shift+Enter new line · Esc cancels", 10, "#9B8C65");
             status.TextWrapping = TextWrapping.Wrap; status.Margin = new Thickness(0, 0, 0, 5); Grid.SetRow(status, 2); content.Children.Add(status);
             var footer = new Grid();
-            var hint = MemoTheme.Text("备注留在晾台，原图照常复制", 10, "#A29576"); hint.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(hint);
-            var save = MemoTheme.Button("保存", "保存截图备注"); save.Width = 64; save.HorizontalAlignment = HorizontalAlignment.Right;
+            var hint = MemoTheme.Text("The caption stays here; the image copies unchanged", 10, "#A29576"); hint.VerticalAlignment = VerticalAlignment.Center; footer.Children.Add(hint);
+            var save = MemoTheme.Button("Save", "Save caption"); save.Width = 64; save.HorizontalAlignment = HorizontalAlignment.Right;
             save.Background = MemoTheme.Brush("#FFFDF8"); save.Foreground = MemoTheme.Brush("#756341");
             save.BorderBrush = MemoTheme.Brush("#70C7B17A"); save.BorderThickness = new Thickness(1);
             AutomationProperties.SetAutomationId(save, "RemarkSave"); save.Click += delegate { SaveAndClose(); }; footer.Children.Add(save);
@@ -168,7 +168,7 @@ namespace Snapline
             {
                 store.Log("Save screenshot remark", ex);
                 autoCloseSuspended = true;
-                status.Text = "未能保存，文字已保留，请稍后重试。"; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
+                status.Text = "Could not save. Your text is kept; try again shortly."; status.Foreground = MemoTheme.Brush("#B56D53"); return false;
             }
         }
         internal void SaveAndClose() { if (TrySave()) Close(); }
@@ -198,7 +198,7 @@ namespace Snapline
                 Background = new LinearGradientBrush(MemoTheme.Hex("#EFF8FE"), MemoTheme.Hex("#E0F0FB"), 90),
                 BorderBrush = MemoTheme.Brush("#C6E2F5"), BorderThickness = new Thickness(1, 0, 1, 1)
             };
-            AutomationProperties.SetName(button, blank ? "添加截图备注" : "编辑截图备注");
+            AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");
             var paper = new FrameworkElementFactory(typeof(Grid));
             var frame = new FrameworkElementFactory(typeof(Border));
             frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(0, 0, 5, 5));
@@ -244,7 +244,7 @@ namespace Snapline
         {
             bool blank = String.IsNullOrWhiteSpace(shot.Remark);
             double width = button.Width, lead = blank ? (width < 110 ? 8 : 11) : 3, gap = width < 110 ? 4 : 7;
-            string summary = blank ? "添加备注" : shot.Remark.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
+            string summary = blank ? "Add caption" : shot.Remark.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
             var content = new Grid();
             content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(lead + gap) });
             content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -263,8 +263,8 @@ namespace Snapline
             var label = new RemarkText { Text = summary, FontSize = 12, FontFamily = new FontFamily("Microsoft YaHei UI"), Foreground = Brushes.Black };
             label.MaxHeight = 20; label.ClipToBounds = true;
             label.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(label, 1); content.Children.Add(label); button.Content = content;
-            AutomationProperties.SetName(button, blank ? "添加截图备注" : "编辑截图备注");
-            button.ToolTip = blank ? "记一下这张截图的用途" : "点击修改备注 · 悬停图片查看全文";
+            AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");
+            button.ToolTip = blank ? "Note what this screenshot is for" : "Click to edit · Hover the image for the full text";
         }
         void RefreshRemark(Shot shot)
         {

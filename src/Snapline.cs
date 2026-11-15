@@ -26,7 +26,7 @@ using Forms = System.Windows.Forms;
 using Drawing = System.Drawing;
 using Path = System.IO.Path;
 
-[assembly: System.Reflection.AssemblyTitle("Snapline - 截图晾台")]
+[assembly: System.Reflection.AssemblyTitle("Snapline")]
 [assembly: System.Reflection.AssemblyDescription("Private, local screenshot shelf for Windows")]
 [assembly: System.Reflection.AssemblyVersion("0.5.8.0")]
 
@@ -165,7 +165,7 @@ namespace Snapline
         }
         internal static BitmapSource Load(string file)
         {
-            if (new FileInfo(file).Length > 64L * 1024 * 1024) throw new InvalidOperationException("图片超过 64 MB。");
+            if (new FileInfo(file).Length > 64L * 1024 * 1024) throw new InvalidOperationException("The image is larger than 64 MB.");
             using (var stream = System.IO.File.Open(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
                 var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
@@ -177,7 +177,7 @@ namespace Snapline
         }
         internal static BitmapSource Preview(string file, int maxWidth, int maxHeight, double aspect)
         {
-            if (new FileInfo(file).Length > 64L * 1024 * 1024) throw new InvalidOperationException("图片超过 64 MB。");
+            if (new FileInfo(file).Length > 64L * 1024 * 1024) throw new InvalidOperationException("The image is larger than 64 MB.");
             using (var stream = System.IO.File.Open(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
                 var image = new BitmapImage();
@@ -194,7 +194,7 @@ namespace Snapline
         static void CheckSize(BitmapSource image)
         {
             if (image.PixelWidth <= 0 || image.PixelHeight <= 0 || (long)image.PixelWidth * image.PixelHeight > 50000000)
-                throw new InvalidOperationException("图片尺寸过大（最多 5000 万像素）。");
+                throw new InvalidOperationException("The image is too large (50 megapixels at most).");
         }
         internal static string Hash(BitmapSource image)
         {
@@ -325,13 +325,13 @@ namespace Snapline
         string toast = "";
         DateTime toastUntil;
         internal bool ClipboardRegistered, HotkeyRegistered, CaptureHotkeyRegistered;
-        internal string CaptureShortcutLabel { get { var shortcut = ShortcutSpec.From(store.Settings); return shortcut == null ? "快捷键已关闭" : shortcut.Label; } }
+        internal string CaptureShortcutLabel { get { var shortcut = ShortcutSpec.From(store.Settings); return shortcut == null ? "Shortcut off" : shortcut.Label; } }
         internal Shelf(Store data, bool noCapture, bool demo)
         {
             store = data;
             this.noCapture = noCapture;
             this.demo = demo;
-            Title = "截图晾台 Snapline";
+            Title = "Snapline";
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true;
@@ -376,7 +376,7 @@ namespace Snapline
             if (Startup != null && !StartCollapsed)
             {
                 string error;
-                if (!Startup.Initialize(out error)) tray.ShowBalloonTip(5000, "开机启动未启用", error, Forms.ToolTipIcon.Warning);
+                if (!Startup.Initialize(out error)) tray.ShowBalloonTip(5000, "Start at login is off", error, Forms.ToolTipIcon.Warning);
             }
             store.SaveSettings(); // Persist disabled legacy collection preferences on upgrade.
             captureDelay.Interval = TimeSpan.FromMilliseconds(80);
@@ -396,18 +396,18 @@ namespace Snapline
                 keepUntil = DateTime.Now.AddSeconds(7);
                 if (!store.Settings.WelcomeShown)
                 {
-                    tray.ShowBalloonTip(4500, "截图晾台已启动", CaptureShortcutLabel + " 框选截图。图片右侧「操作提示」卡片可查看说明。开机启动可在托盘开关。", Forms.ToolTipIcon.Info);
+                    tray.ShowBalloonTip(4500, "Snapline is running", CaptureShortcutLabel + " captures a region. See the 'Tips' card right of the images. Start at login is in the tray menu.", Forms.ToolTipIcon.Info);
                     store.Settings.WelcomeShown = true;
                     store.SaveSettings();
                 }
             }
 
-            if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " 已被占用，可点击剪刀截图或在托盘更换快捷键。");
-            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + T 已被其他程序占用，可用顶部悬停或托盘展开。");
+            if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
+            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + T is in use by another program. Open the shelf from the top edge or the tray.");
         }
         void StartupNotice(string message)
         {
-            if (StartCollapsed) tray.ShowBalloonTip(5000, "截图晾台", message, Forms.ToolTipIcon.Warning);
+            if (StartCollapsed) tray.ShowBalloonTip(5000, "Snapline", message, Forms.ToolTipIcon.Warning);
             else Notify(message);
         }
         IntPtr Message(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled)
@@ -593,12 +593,12 @@ namespace Snapline
         }
         void UpdateShortcutMenu()
         {
-            if (captureMenu != null) captureMenu.Text = "框选截图（仅复制）";
+            if (captureMenu != null) captureMenu.Text = "Capture region (copy only)";
             foreach (var choice in shortcutChoices)
             {
                 choice.Value.Checked = choice.Key == store.Settings.CaptureShortcut;
                 if (choice.Key == "Custom")
-                    choice.Value.Text = store.Settings.CaptureShortcut == "Custom" ? "自定义…（" + CaptureShortcutLabel + "）" : "自定义…";
+                    choice.Value.Text = store.Settings.CaptureShortcut == "Custom" ? "Custom… (" + CaptureShortcutLabel + ")" : "Custom…";
             }
         }
         internal void StartCapture() { StartCapture(false); }
@@ -622,7 +622,7 @@ namespace Snapline
             {
                 if ((DateTime.Now - captureRequested).TotalSeconds < 5) return;
                 captureDelay.Stop(); CompleteCapture(captureSerial, null, false);
-                Notify("请松开快捷键后重试截图。"); return;
+                Notify("Release the shortcut keys and capture again."); return;
             }
             if ((DateTime.Now - captureRequested).TotalMilliseconds < 240) return;
             captureDelay.Stop();
@@ -646,36 +646,36 @@ namespace Snapline
             catch (Exception ex) { copied = false; store.Log("Copy captured image", ex); }
             if (collect && !noCapture)
             {
-                store.Add(image, "晾台截图");
-                Notify(copied ? "截图已挂上并复制。点击图片下方「添加备注」记一下用途。" : "截图已挂上晾台；剪贴板暂时被占用，可单击图片重试复制。");
+                store.Add(image, "Snapline capture");
+                Notify(copied ? "Captured, hung and copied. Click 'Add caption' under the image to note its purpose." : "Captured and hung; the clipboard was busy, click the image to copy it.");
             }
-            else Notify(copied ? (ShortcutCollects ? "截图已复制。自动挂上晾台请使用 " + CaptureShortcutLabel + "。" :
-                "截图已复制。自动挂上请在托盘选择 Ctrl+B 或自定义快捷键。") : "剪贴板被占用，截图未复制，请重试。");
+            else Notify(copied ? (ShortcutCollects ? "Screenshot copied. To hang it automatically, use " + CaptureShortcutLabel + "." :
+                "Screenshot copied. To hang automatically, pick Ctrl+B or a custom shortcut in the tray menu.") : "The clipboard was busy and the screenshot was not copied. Try again.");
         }
         ToolTip HelpPopup()
         {
             var content = new StackPanel { Width = 278 };
-            var title = Text("截图晾台 · 操作提示", 13, "#FF27668F");
+            var title = Text("Snapline · Tips", 13, "#FF27668F");
             title.FontWeight = FontWeights.SemiBold; title.Margin = new Thickness(0, 0, 0, 10);
             content.Children.Add(title);
-            AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "框选截图，完成后自动挂上" : "在托盘设置截图快捷键");
+            AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture a region and hang it" : "Set a capture shortcut in the tray menu");
             if (!CaptureHotkeyRegistered && store.Settings.CaptureShortcut != "None")
-                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " 已被占用，可在托盘更换", FontSize = 10, Foreground = Brush("#FF9C6A3B"), Margin = new Thickness(0, 0, 0, 7) });
-            AddHelpRow(content, "卡片截图按钮", "只复制，不自动挂上晾台");
-            AddHelpRow(content, "触碰顶部蓝线", "碰到线条立即开始展开");
-            AddHelpRow(content, "图片下方小纸条", "添加或修改截图用途备注");
-            AddHelpRow(content, "Ctrl + Alt + T", "固定展开 / 收起");
-            AddHelpRow(content, "＋ 便签", "随手记录，自动保存到本机");
-            AddHelpRow(content, "双击便签", "编辑内容与纸色，右键复制或删除");
-            AddHelpRow(content, "悬停图片", "放大预览，移开自动收起");
-            AddHelpRow(content, "单击 / 双击", "复制图片 / 打开查看");
-            AddHelpRow(content, "拖出 / 长按", "拖到文件夹 / 用画图编辑");
-            AddHelpRow(content, "右键图片", "另存为、移除等更多操作");
-            var footer = Text("仅晾台快捷键截图会自动加入；托盘可自定义", 10, "#FF81909D");
+                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = 10, Foreground = Brush("#FF9C6A3B"), Margin = new Thickness(0, 0, 0, 7) });
+            AddHelpRow(content, "Scissors button", "Copies only, does not hang");
+            AddHelpRow(content, "Touch the blue line", "Opens the shelf");
+            AddHelpRow(content, "Slip under an image", "Add or edit its caption");
+            AddHelpRow(content, "Ctrl + Alt + T", "Pin open / close");
+            AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
+            AddHelpRow(content, "Double-click a note", "Edit text and paper; right-click to copy or delete");
+            AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
+            AddHelpRow(content, "Click / double-click", "Copy image / open it");
+            AddHelpRow(content, "Drag out / long-press", "Drop into a folder / edit in Paint");
+            AddHelpRow(content, "Right-click an image", "Save as, remove and more");
+            var footer = Text("Only shortcut captures are collected; customise in the tray", 10, "#FF81909D");
             footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
             if (store.Settings.CaptureShortcut == "CtrlB")
             {
-                var shortcutNote = Text("Ctrl + B 会占用加粗键；可在托盘关闭或换键", 10, "#FF9C6A3B");
+                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in the tray", 10, "#FF9C6A3B");
                 shortcutNote.Margin = new Thickness(0, 5, 0, 0); content.Children.Add(shortcutNote);
             }
             var body = new Border { Child = content, Padding = new Thickness(14), CornerRadius = new CornerRadius(10),
@@ -701,13 +701,13 @@ namespace Snapline
             tray = new Forms.NotifyIcon();
             try { tray.Icon = Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location); }
             catch { tray.Icon = Drawing.SystemIcons.Application; }
-            tray.Text = "截图晾台 Snapline";
+            tray.Text = "Snapline";
             var menu = new Forms.ContextMenuStrip();
-            captureMenu = new Forms.ToolStripMenuItem("框选截图（仅复制）", null, delegate { StartCapture(); });
+            captureMenu = new Forms.ToolStripMenuItem("Capture region (copy only)", null, delegate { StartCapture(); });
             menu.Items.Add(captureMenu);
-            var shortcutMenu = new Forms.ToolStripMenuItem("截图快捷键");
+            var shortcutMenu = new Forms.ToolStripMenuItem("Capture shortcut");
             string[] modes = { "CtrlB", "CtrlPrintScreen", "ShiftPrintScreen", "Custom", "None" };
-            string[] labels = { "Ctrl + B（默认）", "Ctrl + PrtSc（仅复制）", "Shift + PrtSc（仅复制）", "自定义…", "关闭快捷键" };
+            string[] labels = { "Ctrl + B (default)", "Ctrl + PrtSc (copy only)", "Shift + PrtSc (copy only)", "Custom…", "Shortcut off" };
             for (int i = 0; i < modes.Length; i++)
             {
                 string selected = modes[i];
@@ -716,28 +716,28 @@ namespace Snapline
             }
             menu.Items.Add(shortcutMenu);
             UpdateShortcutMenu();
-            menu.Items.Add("展开 / 收起（自动收起）", null, delegate { ToggleFromTray(); });
-            menu.Items.Add("新增便签", null, delegate { NewNote(); });
-            menu.Items.Add("导入图片…", null, delegate { ChooseFiles(); });
-            pinMenu = new Forms.ToolStripMenuItem("固定显示", null, delegate { TogglePin(); });
+            menu.Items.Add("Open / close (auto-hide)", null, delegate { ToggleFromTray(); });
+            menu.Items.Add("New note", null, delegate { NewNote(); });
+            menu.Items.Add("Import images…", null, delegate { ChooseFiles(); });
+            pinMenu = new Forms.ToolStripMenuItem("Keep visible", null, delegate { TogglePin(); });
             menu.Items.Add(pinMenu);
             menu.Opening += delegate { pinMenu.Checked = pinned; };
-            menu.Items.Add("上一组", null, delegate { ChangePage(-1); Reveal(); });
-            menu.Items.Add("下一组", null, delegate { ChangePage(1); Reveal(); });
+            menu.Items.Add("Previous page", null, delegate { ChangePage(-1); Reveal(); });
+            menu.Items.Add("Next page", null, delegate { ChangePage(1); Reveal(); });
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(new Forms.ToolStripMenuItem("只自动收集晾台快捷键截图") { Enabled = false });
+            menu.Items.Add(new Forms.ToolStripMenuItem("Only shortcut captures are collected") { Enabled = false });
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("打开暂存文件夹", null, delegate { Launch(store.Inbox); });
-            menu.Items.Add("清空截图…", null, delegate
+            menu.Items.Add("Open storage folder", null, delegate { Launch(store.Inbox); });
+            menu.Items.Add("Clear screenshots…", null, delegate
             {
                 dialogOpen = true;
                 try
                 {
-                    if (Forms.MessageBox.Show("清空应用保存的 " + store.Items.Count + " 张副本？原始截图不会删除。", "截图晾台", Forms.MessageBoxButtons.YesNo, Forms.MessageBoxIcon.Question) == Forms.DialogResult.Yes) store.Clear();
+                    if (Forms.MessageBox.Show("Clear the " + store.Items.Count + " saved copies? Original screenshots are not deleted.", "Snapline", Forms.MessageBoxButtons.YesNo, Forms.MessageBoxIcon.Question) == Forms.DialogResult.Yes) store.Clear();
                 }
                 finally { dialogOpen = false; }
             });
-            startupMenu = new Forms.ToolStripMenuItem("开机启动", null, delegate
+            startupMenu = new Forms.ToolStripMenuItem("Start at login", null, delegate
             {
                 string error;
                 if (Startup != null && !Startup.Apply(!store.Settings.StartupEnabled, out error)) Notify(error);
@@ -745,9 +745,9 @@ namespace Snapline
             }) { Enabled = Startup != null };
             menu.Items.Add(startupMenu);
             menu.Opening += delegate { startupMenu.Checked = Startup != null && store.Settings.StartupEnabled; };
-            menu.Items.Add("使用说明", null, delegate { About(); });
+            menu.Items.Add("Help", null, delegate { About(); });
             menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("退出", null, delegate { Close(); });
+            menu.Items.Add("Quit", null, delegate { Close(); });
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { ToggleFromTray(); };
             tray.Visible = true;
@@ -757,7 +757,7 @@ namespace Snapline
             dialogOpen = true;
             try
             {
-                Forms.MessageBox.Show("截图晾台 Snapline 0.5.8\n\n" + CaptureShortcutLabel + "：框选截图（需快捷键可用）。\n图片右侧「操作提示」：悬停查看说明，点击内部按钮仅截图并复制。\nWin + Shift + S 和其他软件截图不会自动加入。\nCtrl + Alt + T：展开 / 收起，展开后保持显示。\n双击托盘图标：临时展开，离开后自动收起。\n托盘「固定显示」：勾选保持显示，取消后恢复自动收起。\n托盘「开机启动」：首次运行自动启用，取消后记住；登录 Windows 后收起运行。\n鼠标触碰顶部中央蓝线：立即开始展开。\n图片下方「添加备注」或小纸条：记录截图用途；Enter 保存，Esc 取消。\n单击图片：复制。双击：查看。\n拖出：复制为文件。按 Shift 拖到文件夹：移动。\n长按图片：用画图编辑。右键：更多操作。\n\n默认 Ctrl+B 或自定义快捷键发起的框选截图会自动加入。微信截图、普通复制图片和外部截图文件夹均不自动收集。\n最多保留 60 张，超过后清理最早的应用副本。\n完全本地运行，不联网、不上传、不修改系统截图设置。", "截图晾台", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
+                Forms.MessageBox.Show("Snapline 0.5.8\n\n" + CaptureShortcutLabel + ": capture a region (when the shortcut is available).\n'Tips' card right of the images: hover for help; its button captures and copies only.\nWin + Shift + S and other screenshot tools are not collected.\nCtrl + Alt + T: open / close; stays open once opened.\nDouble-click the tray icon: open temporarily, auto-hides when you leave.\nTray 'Keep visible': tick to stay open, untick to auto-hide again.\nTray 'Start at login': enabled on first run; your choice is remembered.\nTouch the blue line at the top centre: opens the shelf.\n'Add caption' or the slip under an image: note its purpose; Enter saves, Esc cancels.\nClick an image: copy. Double-click: open.\nDrag out: copy as a file. Shift-drag to a folder: move.\nLong-press an image: edit in Paint. Right-click: more actions.\n\nCaptures made with Ctrl+B or your custom shortcut are added automatically. Other screenshots and copied images are not.\nUp to 60 images are kept; the oldest saved copies are cleared beyond that.\nRuns entirely on this PC: no network, no uploads, no changes to system screenshot settings.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
             }
             finally { dialogOpen = false; }
         }
@@ -799,15 +799,15 @@ namespace Snapline
         }
         void Import(string file)
         {
-            try { if (!ImageFile(file)) { Notify("支持 PNG、JPEG、BMP、GIF 和 TIFF 图片。"); return; } var added = store.Import(file); Notify(added == null ? "这张图片已经在晾台上。" : "已加入晾台，原文件保留。"); }
-            catch (Exception ex) { store.Log("Import image", ex); Notify("无法导入：" + ex.Message); }
+            try { if (!ImageFile(file)) { Notify("PNG, JPEG, BMP, GIF and TIFF images are supported."); return; } var added = store.Import(file); Notify(added == null ? "This image is already on the shelf." : "Added to the shelf. The original file is untouched."); }
+            catch (Exception ex) { store.Log("Import image", ex); Notify("Could not import: " + ex.Message); }
         }
         void ChooseFiles()
         {
             dialogOpen = true;
             try
             {
-                using (var picker = new Forms.OpenFileDialog { Title = "导入图片", Multiselect = true, Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff" })
+                using (var picker = new Forms.OpenFileDialog { Title = "Import images", Multiselect = true, Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff" })
                     if (picker.ShowDialog() == Forms.DialogResult.OK) foreach (string file in picker.FileNames) Import(file);
             }
             finally { dialogOpen = false; }
@@ -824,9 +824,9 @@ namespace Snapline
 
                 SetClipboard(data);
 
-                Notify("已复制，可直接 Ctrl + V 粘贴。");
+                Notify("Copied. Paste with Ctrl + V.");
             }
-            catch (Exception ex) { store.Log("Copy image", ex); Notify("复制失败，请稍后重试。"); }
+            catch (Exception ex) { store.Log("Copy image", ex); Notify("Copy failed. Try again shortly."); }
 
         }
         internal void CopyFile(Shot shot)
@@ -836,9 +836,9 @@ namespace Snapline
 
                 SetClipboard(new DataObject(DataFormats.FileDrop, new[] { store.FullPath(shot) }));
 
-                Notify("已复制 PNG 文件，可粘贴到文件夹。");
+                Notify("PNG file copied. Paste it into a folder.");
             }
-            catch (Exception ex) { store.Log("Copy file", ex); Notify("复制文件失败，请稍后重试。"); }
+            catch (Exception ex) { store.Log("Copy file", ex); Notify("Could not copy the file. Try again shortly."); }
 
         }
         internal static void SetClipboard(DataObject data)
@@ -853,26 +853,26 @@ namespace Snapline
         void Launch(string file)
         {
             try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); }
-            catch (Exception ex) { store.Log("Open file", ex); Notify("无法打开：" + ex.Message); }
+            catch (Exception ex) { store.Log("Open file", ex); Notify("Could not open: " + ex.Message); }
         }
         void Edit(Shot shot)
         {
-            try { Process.Start(new ProcessStartInfo("mspaint.exe", "\"" + store.FullPath(shot) + "\"") { UseShellExecute = true }); Notify("已在画图中打开，保存后晾台会更新。"); }
-            catch (Exception ex) { store.Log("Open editor", ex); Notify("无法打开画图。可右键选择打开图片。"); }
+            try { Process.Start(new ProcessStartInfo("mspaint.exe", "\"" + store.FullPath(shot) + "\"") { UseShellExecute = true }); Notify("Opened in Paint. The shelf updates when you save."); }
+            catch (Exception ex) { store.Log("Open editor", ex); Notify("Could not open Paint. Right-click and choose Open image."); }
         }
         void SaveAs(Shot shot)
         {
             dialogOpen = true;
             try
             {
-                using (var picker = new Forms.SaveFileDialog { Title = "另存截图", FileName = shot.File, Filter = "PNG 图片|*.png", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) })
+                using (var picker = new Forms.SaveFileDialog { Title = "Save screenshot as", FileName = shot.File, Filter = "PNG image|*.png", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) })
                     if (picker.ShowDialog() == Forms.DialogResult.OK)
                     {
                         if (Path.GetFullPath(picker.FileName).Equals(store.FullPath(shot), StringComparison.OrdinalIgnoreCase)) return;
-                        System.IO.File.Copy(store.FullPath(shot), picker.FileName, true); Notify("已保存，晾台上的副本保留。");
+                        System.IO.File.Copy(store.FullPath(shot), picker.FileName, true); Notify("Saved. The copy on the shelf is kept.");
                     }
             }
-            catch (Exception ex) { store.Log("Save image", ex); Notify("保存失败：" + ex.Message); }
+            catch (Exception ex) { store.Log("Save image", ex); Notify("Could not save: " + ex.Message); }
             finally { dialogOpen = false; }
         }
         MenuItem Item(string text, Action action)
@@ -884,15 +884,15 @@ namespace Snapline
         ContextMenu ShotMenu(Shot shot)
         {
             var menu = new ContextMenu();
-            menu.Items.Add(Item("复制图片", delegate { Copy(shot); }));
-            menu.Items.Add(Item("复制 PNG 文件", delegate { CopyFile(shot); }));
-            menu.Items.Add(Item("打开图片", delegate { Launch(store.FullPath(shot)); }));
-            menu.Items.Add(Item(String.IsNullOrWhiteSpace(shot.Remark) ? "添加截图备注…" : "编辑截图备注…", delegate { menu.IsOpen = false; dialogOpen = false; Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(delegate { EditRemark(shot, null); })); }));
-            menu.Items.Add(Item("用画图编辑", delegate { Edit(shot); }));
-            menu.Items.Add(Item("另存为…", delegate { SaveAs(shot); }));
-            menu.Items.Add(Item("在文件夹中显示", delegate { Process.Start("explorer.exe", "/select,\"" + store.FullPath(shot) + "\""); }));
+            menu.Items.Add(Item("Copy image", delegate { Copy(shot); }));
+            menu.Items.Add(Item("Copy PNG file", delegate { CopyFile(shot); }));
+            menu.Items.Add(Item("Open image", delegate { Launch(store.FullPath(shot)); }));
+            menu.Items.Add(Item(String.IsNullOrWhiteSpace(shot.Remark) ? "Add caption…" : "Edit caption…", delegate { menu.IsOpen = false; dialogOpen = false; Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(delegate { EditRemark(shot, null); })); }));
+            menu.Items.Add(Item("Edit in Paint", delegate { Edit(shot); }));
+            menu.Items.Add(Item("Save as…", delegate { SaveAs(shot); }));
+            menu.Items.Add(Item("Show in folder", delegate { Process.Start("explorer.exe", "/select,\"" + store.FullPath(shot) + "\""); }));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("从晾台移除", delegate { RemoveShot(shot); }));
+            menu.Items.Add(Item("Remove from shelf", delegate { RemoveShot(shot); }));
             menu.Opened += delegate { CloseImagePreview(); dialogOpen = true; };
             menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; };
             return menu;
@@ -974,7 +974,7 @@ namespace Snapline
             if (!expanded) motionLayer.Children.Clear();
             if (!expanded)
             {
-                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = new CornerRadius(1), Background = Brush("#D671C6FA"), ToolTip = "鼠标触碰这条蓝线即可展开 · 图片旁「操作提示」查看说明" };
+                var mark = new Border { Width = TopHoverGate.IndicatorWidth, Height = TopHoverGate.IndicatorHeight, CornerRadius = new CornerRadius(1), Background = Brush("#D671C6FA"), ToolTip = "Touch this blue line to open · See the 'Tips' card for help" };
                 indicator = mark;
                 mark.MouseEnter += delegate { TryRevealFromIndicator(); };
                 Place(mark, Math.Max(0, (shelfWidth - TopHoverGate.IndicatorWidth) / 2), 0);
@@ -1025,8 +1025,8 @@ namespace Snapline
             }
             if (maxPage > 0)
             {
-                Place(Tool("‹", "上一组（也可滚动鼠标）", delegate { ChangePage(-1); }), 34, 29);
-                Place(Tool("›", "下一组（也可滚动鼠标）", delegate { ChangePage(1); }), shelfWidth - 62, 29);
+                Place(Tool("‹", "Previous page (or scroll)", delegate { ChangePage(-1); }), 34, 29);
+                Place(Tool("›", "Next page (or scroll)", delegate { ChangePage(1); }), shelfWidth - 62, 29);
             }
             double helpCenter = HangingCenter(shown.Length, shown.Length);
             MakeHelpCard(helpCenter, RopeY(helpCenter) + 15, shown.Length);
@@ -1059,19 +1059,19 @@ namespace Snapline
             double lean = 1.8;
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, RenderTransform = swing, Cursor = Cursors.Hand };
-            AutomationProperties.SetName(grid, "操作提示（悬停查看）");
+            AutomationProperties.SetName(grid, "Tips (hover to view)");
             var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
-            var title = Text("操作提示", 16, "#FF307FAF");
+            var title = Text("Tips", 16, "#FF307FAF");
             title.FontWeight = FontWeights.SemiBold; title.HorizontalAlignment = HorizontalAlignment.Center;
             content.Children.Add(title);
-            var subtitle = Text("鼠标悬停查看说明", 11, "#FF80929F");
+            var subtitle = Text("Hover for help", 11, "#FF80929F");
             subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4, 0, 0);
             content.Children.Add(subtitle);
-            var capture = Tool("✂ 截图（仅复制）", "只复制；自动挂上晾台请按 Ctrl + B", StartCapture);
+            var capture = Tool("✂ Capture (copy only)", "Copies only; press Ctrl + B to hang automatically", StartCapture);
             capture.FontSize = 11; capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
             capture.Background = Brush("#FFE4F4FF"); capture.Foreground = Brush("#FF3C89B8");
             capture.ToolTip = null; content.Children.Add(capture);
-            var addNote = Tool("＋ 便签", "新增便签", NewNote);
+            var addNote = Tool("＋ Note", "New note", NewNote);
             addNote.FontSize = 12; addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
             addNote.Background = Brush("#FFFFF3C9"); addNote.Foreground = Brush("#FF9D8345");
             System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
@@ -1139,7 +1139,7 @@ namespace Snapline
             var preview = new Image { Width = width, Height = height, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center };
             var content = new StackPanel { Width = bodyWidth };
             ScrollViewer remarkScroll = null;
-            var title = Text("放大预览", 12, "#FF387DA6");
+            var title = Text("Preview", 12, "#FF387DA6");
             title.Margin = new Thickness(0, 0, 0, 8); content.Children.Add(title);
             content.Children.Add(new Border { Child = preview, Background = Brush("#FFF0F4F8"), CornerRadius = new CornerRadius(4), ClipToBounds = true });
             if (remarkBudget > 0)
@@ -1153,7 +1153,7 @@ namespace Snapline
                 content.Children.Add(new Border { Child = scroll, Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 9, 0, 0),
                     CornerRadius = new CornerRadius(5), Background = Brush("#FFFFF7DD"), BorderBrush = Brush("#FFEBDDB6"), BorderThickness = new Thickness(1) });
             }
-            content.Children.Add(new TextBlock { Text = "单击复制 · 双击查看 · 拖出图片" + (remarkBudget > 0 ? " · 滚轮查看长备注" : ""), FontSize = 11,
+            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to open · Drag out" + (remarkBudget > 0 ? " · Scroll for long captions" : ""), FontSize = 11,
                 Foreground = Brush("#FF82909B"), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
             var tip = new ToolTip
             {
@@ -1206,7 +1206,7 @@ namespace Snapline
                 Width = width, Height = height, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
                 Cursor = Cursors.Hand
             };
-            AutomationProperties.SetName(grid, "悬挂图片 " + shot.Label);
+            AutomationProperties.SetName(grid, "Hung image " + shot.Label);
             AutomationProperties.SetAutomationId(grid, "ShotCard-" + shot.File);
             grid.ToolTip = ImagePopup(shot, grid);
             RegisterHoverPreview(grid);
@@ -1237,10 +1237,10 @@ namespace Snapline
                 Content = "×", Width = 19, Height = 19, FontSize = 13,
                 Background = Brush("#C948505F"), Foreground = Brushes.White, BorderThickness = new Thickness(0),
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 3, 3, 0), Focusable = false, ToolTip = "移除应用副本",
+                Margin = new Thickness(0, 3, 3, 0), Focusable = false, ToolTip = "Remove saved copy",
                 Opacity = 0, IsHitTestVisible = false, Tag = "DeleteButton"
             };
-            AutomationProperties.SetName(remove, "移除 " + shot.Label);
+            AutomationProperties.SetName(remove, "Remove " + shot.Label);
             remove.PreviewMouseDown += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; RemoveShot(shot); };
             grid.Children.Add(remove);
             var breeze = new DoubleAnimation(lean - 0.65, lean + 0.65, TimeSpan.FromSeconds(3.4 + (index % 3) * 0.6))
@@ -1291,7 +1291,7 @@ namespace Snapline
                     var result = DragDrop.DoDragDrop(grid, data, DragDropEffects.Copy | DragDropEffects.Move);
                     if (result == DragDropEffects.Move || !System.IO.File.Exists(store.FullPath(shot))) store.Remove(shot);
                 }
-                catch (Exception ex) { store.Log("Drag image", ex); Notify("拖放未完成，可用右键另存为。"); }
+                catch (Exception ex) { store.Log("Drag image", ex); Notify("Drag did not complete. Right-click and use Save as."); }
                 finally { dragging = false; lastInside = DateTime.Now; }
             };
             grid.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e)
@@ -1368,19 +1368,19 @@ namespace Snapline
                     bool demo = args.Contains("--demo");
                     if (demo && store.Items.Count == 0)
                     {
-                        store.Add(Demo("IDEAS", "把灵感挂起来", "#315B75"), "示例 · 灵感");
-                        store.Add(Demo("A LITTLE BREAK", "一杯咖啡的时间", "#8C6B4D"), "示例 · 日常");
-                        store.Add(Demo("READY TO SHARE", "截图，随手取用", "#426C60"), "示例 · 分享");
+                        store.Add(Demo("IDEAS", "Hang up an idea", "#315B75"), "Sample · Ideas");
+                        store.Add(Demo("A LITTLE BREAK", "Time for a coffee", "#8C6B4D"), "Sample · Daily");
+                        store.Add(Demo("READY TO SHARE", "Screenshots within reach", "#426C60"), "Sample · Share");
                     }
                     if (args.Contains("--demo-notes") && store.Notes.Count == 0)
                     {
-                        store.AddNote("周末的小计划\\n去公园走走，带上相机。\\n\\n给自己留一点慢下来的时间。".Replace("\\n", "\n"), "Butter");
-                        store.AddNote("今天先做这几件事\\n整理资料、回一封邮件，\\n再给新想法留个位置。".Replace("\\n", "\n"), "Mint");
-                        store.AddNote("一个小灵感\\n把想到的事情写下来，\\n让它像照片一样晾着。".Replace("\\n", "\n"), "Lavender");
+                        store.AddNote("Weekend plan\\nWalk in the park, bring the camera.\\n\\nLeave some time to slow down.".Replace("\\n", "\n"), "Butter");
+                        store.AddNote("Today\\nSort the files, answer one email,\\nand leave room for a new idea.".Replace("\\n", "\n"), "Mint");
+                        store.AddNote("A small idea\\nWrite things down\\nand hang them up like photos.".Replace("\\n", "\n"), "Lavender");
                     }
                     if (demo && args.Contains("--demo-remarks") && store.Items.Count > 0)
                     {
-                        string[] examples = { "周五做方案时，参考这个布局。", "今天的小灵感，留给下次创作。", "这是项目需要的配色，记得和同事确认。" };
+                        string[] examples = { "Use this layout for the Friday proposal.", "A small idea for next time.", "Project colours; confirm with the team." };
                         for (int i = 0; i < store.Items.Count; i++) store.UpdateRemark(store.Items[i], examples[i % examples.Length]);
                     }
                     var shelf = new Shelf(store, args.Contains("--no-capture"), demo);
@@ -1414,7 +1414,7 @@ namespace Snapline
             {
                 Directory.CreateDirectory(root);
                 System.IO.File.WriteAllText(Path.Combine(root, "startup-error.log"), ex.ToString(), Encoding.UTF8);
-                Forms.MessageBox.Show("启动失败：" + ex.Message + "\n详情已写入 " + Path.Combine(root, "startup-error.log"), "Snapline");
+                Forms.MessageBox.Show("Could not start: " + ex.Message + "\nDetails were written to " + Path.Combine(root, "startup-error.log"), "Snapline");
                 return 1;
             }
         }
@@ -1440,7 +1440,7 @@ namespace Snapline
             if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any()) throw new InvalidOperationException("Self-test requires an empty, isolated data directory.");
             var results = new List<string>();
             var store = new Store(root);
-            BitmapSource image = Demo("TEST", "本地图片", "#426C60");
+            BitmapSource image = Demo("TEST", "Local image", "#426C60");
             Shot first = store.Add(image, "test");
             Assert(first != null && System.IO.File.Exists(store.FullPath(first)), "PNG saved");
             Assert(store.Add(image, "duplicate") == null && store.Items.Count == 1, "Duplicate pixels rejected");

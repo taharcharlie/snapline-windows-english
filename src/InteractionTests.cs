@@ -170,7 +170,7 @@ namespace Snapline
                         editor.Input.Text = "自动收起时，保存这句提醒 😊";
                         inside = false; editor.ObservePointer(false, fakeNow);
                         fakeNow = fakeNow.AddMilliseconds(150); editor.ObservePointer(false, fakeNow);
-                        editor.Input.Text += "。";
+                        editor.Input.Text += ".";
                         editor.ObservePointer(false, fakeNow); fakeNow = fakeNow.AddMilliseconds(100); editor.ObservePointer(false, fakeNow);
                         Check(!editor.IsFading, "Continuing to type did not restart the countdown.");
                         fakeNow = fakeNow.AddMilliseconds(100); editor.ObservePointer(false, fakeNow); phase = 4;

@@ -89,7 +89,7 @@ namespace Snapline
                     if (phase == 0)
                     {
                         Require(editor == null && Native.GetForegroundWindow() == foreground, "Remark entry opened/activated an editor automatically.");
-                        Require(StripText(shelf, shot).Text.Contains("添加备注"), "Blank screenshot lacks add entry.");
+                        Require(StripText(shelf, shot).Text.Contains("Add caption"), "Blank screenshot lacks add entry.");
                         report.Add("PASS: adding a screenshot shows a paper-strip entry and does not automatically open an editor or steal focus");
                         Click(FindButton(shelf, shot)); phase = 1;
                     }
@@ -148,7 +148,7 @@ namespace Snapline
                     { editor.Input.Text = ""; editor.SaveAndClose(); phase = 9; }
                     else if (phase == 9 && editor == null && shelf.FlyingCount == 0 && shelf.HoverPreviewAllowed)
                     {
-                        Require(String.IsNullOrEmpty(shot.Remark) && StripText(shelf, shot).Text.Contains("添加备注"), "Clear did not restore add entry.");
+                        Require(String.IsNullOrEmpty(shot.Remark) && StripText(shelf, shot).Text.Contains("Add caption"), "Clear did not restore add entry.");
                         store.UpdateRemark(shot, sample);
                         Require(File.ReadAllBytes(store.FullPath(shot)).SequenceEqual(png), "UI editing changed exported source PNG.");
                         report.Add("PASS: image context menu opens remark editor; clearing restores add entry; copy/drag source PNG remains byte-identical");

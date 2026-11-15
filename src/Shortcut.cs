@@ -21,15 +21,15 @@ namespace Snapline
         }
         internal static string Validate(uint modifiers, uint key)
         {
-            if ((modifiers & 8) != 0) return "Win 组合键由 Windows 使用，请改用 Ctrl、Shift 或 Alt。";
-            if (modifiers == 0 || (modifiers & ~7u) != 0) return "请加上 Ctrl、Shift 或 Alt，避免影响正常输入。";
-            if (key == 0x7B) return "F12 是系统调试保留键，请换一个按键。";
-            if (modifiers == 3 && key == 0x54) return "Ctrl + Alt + T 已用于展开晾台，请换一组。";
-            if (modifiers == 1 && key == 0x73) return "Alt + F4 用于关闭窗口，请换一组。";
+            if ((modifiers & 8) != 0) return "Win shortcuts belong to Windows. Use Ctrl, Shift or Alt.";
+            if (modifiers == 0 || (modifiers & ~7u) != 0) return "Add Ctrl, Shift or Alt so normal typing is not affected.";
+            if (key == 0x7B) return "F12 is reserved by the system. Choose another key.";
+            if (modifiers == 3 && key == 0x54) return "Ctrl + Alt + T already opens the shelf. Choose another.";
+            if (modifiers == 1 && key == 0x73) return "Alt + F4 closes windows. Choose another.";
             bool supported = (key >= 0x41 && key <= 0x5A) || (key >= 0x30 && key <= 0x39) ||
                 (key >= 0x60 && key <= 0x6F) || (key >= 0x70 && key <= 0x87) || key == 0x2C ||
                 (key >= 0xBA && key <= 0xC0) || (key >= 0xDB && key <= 0xDF) || key == 0xE2;
-            return supported ? null : "请选择字母、数字、符号、功能键或 PrtSc。";
+            return supported ? null : "Choose a letter, digit, symbol, function key or PrtSc.";
         }
         internal static string ModifierLabel(uint modifiers)
         {
@@ -66,10 +66,10 @@ namespace Snapline
             get
             {
                 if (Modifiers == 2 && "ABCFNOPRSTUVWXYZ".Contains((char)Key))
-                    return "这组键也常用于软件操作，启用后会优先用于截图。";
+                    return "Apps commonly use this shortcut; once enabled, capture takes priority.";
                 if (Modifiers == 6 && "BCIJNTV".Contains((char)Key))
-                    return "这组键在部分软件中已有用途，启用后会优先用于截图。";
-                return "只收集这组键发起的晾台截图，其他软件截图不会加入。";
+                    return "Some apps use this shortcut; once enabled, capture takes priority.";
+                return "Only captures made with this shortcut are collected; other screenshots are not.";
             }
         }
         internal static bool IsModifier(Key key)
@@ -100,7 +100,7 @@ namespace Snapline
         {
             error = null;
             if (mode != "CtrlB" && mode != "CtrlPrintScreen" && mode != "ShiftPrintScreen" && mode != "None" && mode != "Custom")
-            { error = "未知快捷键选项。"; return false; }
+            { error = "Unknown shortcut option."; return false; }
             if (mode == "Custom" && (error = ShortcutSpec.Validate(modifiers, key)) != null) return false;
             string oldMode = store.Settings.CaptureShortcut;
             uint oldModifiers = store.Settings.CustomCaptureModifiers, oldKey = store.Settings.CustomCaptureKey;
@@ -114,7 +114,7 @@ namespace Snapline
             if (next != null && !sameRegistration)
             {
                 if (!Native.RegisterHotKey(handle, nextId, next.Modifiers | 0x4000u, next.Key))
-                { error = next.Label + " 无法启用，可能已被其他程序占用。请换一组。"; return false; }
+                { error = next.Label + " could not be enabled; another program may be using it. Choose another."; return false; }
                 staged = true;
             }
             store.Settings.CaptureShortcut = mode;
@@ -126,7 +126,7 @@ namespace Snapline
                 store.Settings.CustomCaptureModifiers = oldModifiers; store.Settings.CustomCaptureKey = oldKey;
                 if (staged) Native.UnregisterHotKey(handle, nextId);
                 store.Log("Save capture shortcut", ex);
-                error = "设置保存失败，原快捷键已保留。请重试。"; return false;
+                error = "Could not save the setting; the previous shortcut is kept. Try again."; return false;
             }
             if (!sameRegistration)
             {

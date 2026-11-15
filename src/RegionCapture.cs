@@ -14,7 +14,7 @@ namespace Snapline
         {
             var desktop = Forms.SystemInformation.VirtualScreen;
             if (desktop.Width <= 0 || desktop.Height <= 0 || (long)desktop.Width * desktop.Height > 50000000)
-                throw new InvalidOperationException("屏幕总尺寸过大，无法开始框选截图。");
+                throw new InvalidOperationException("The combined screen area is too large to start a capture.");
             using (var pixels = new Bitmap(desktop.Width, desktop.Height, PixelFormat.Format32bppArgb))
             {
                 using (var graphics = Graphics.FromImage(pixels))
@@ -45,7 +45,7 @@ namespace Snapline
             internal SelectionWindow(Bitmap snapshot, Rectangle bounds)
             {
                 pixels = snapshot; desktop = bounds;
-                Text = "截图晾台 · 框选截图";
+                Text = "Snapline · Capture region";
                 FormBorderStyle = Forms.FormBorderStyle.None;
                 AutoScaleMode = Forms.AutoScaleMode.None;
                 StartPosition = Forms.FormStartPosition.Manual;
@@ -116,7 +116,7 @@ namespace Snapline
                         e.Graphics.DrawRectangle(border, Selection.X, Selection.Y, Selection.Width - 1, Selection.Height - 1);
                 }
                 var pointer = Pointer();
-                string hint = selecting ? Selection.Width + " × " + Selection.Height + "   松开鼠标完成 · Esc 取消" : "拖动选择截图区域 · Esc / 右键取消";
+                string hint = selecting ? Selection.Width + " × " + Selection.Height + "   Release to finish · Esc to cancel" : "Drag to select a region · Esc / right-click to cancel";
                 SizeF size = e.Graphics.MeasureString(hint, hintFont);
                 int width = (int)Math.Ceiling(size.Width) + 24, height = (int)Math.Ceiling(size.Height) + 18;
                 int x = Math.Max(8, Math.Min(desktop.Width - width - 8, pointer.X + 18));

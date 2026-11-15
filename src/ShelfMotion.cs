@@ -178,13 +178,13 @@ namespace Snapline
         {
             if (!store.Items.Contains(shot)) return;
             try { RemoveWithFlight(HangingElement(shot), delegate { store.Remove(shot); }); }
-            catch (Exception ex) { store.Log("Remove screenshot", ex); Notify("未能移除，截图已保留，请稍后重试。"); }
+            catch (Exception ex) { store.Log("Remove screenshot", ex); Notify("Could not remove. The screenshot is kept; try again shortly."); }
         }
         internal void RemoveMemo(Memo note)
         {
             if (!store.Notes.Contains(note)) return;
             try { RemoveWithFlight(HangingElement(note), delegate { store.RemoveNote(note); }); }
-            catch (Exception ex) { store.Log("Remove memo", ex); Notify("未能删除，便签已保留，请稍后重试。"); }
+            catch (Exception ex) { store.Log("Remove memo", ex); Notify("Could not delete. The note is kept; try again shortly."); }
         }
         void SaveRemark(Shot shot, string text)
         {
