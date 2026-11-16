@@ -1,4 +1,4 @@
-// Snapline: a local screenshot shelf for Windows. MIT License.
+﻿// Snapline: a local screenshot shelf for Windows. MIT License.
 // Tray icon, tray menu and the help dialog.
 using System;
 using System.Collections.Generic;
@@ -83,6 +83,13 @@ namespace Snapline
                 themeMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(name + "  (" + Theme.Hints[i] + ")", null, delegate { ChooseTheme(name); }) { Tag = name, Checked = name == Theme.Name });
             }
             menu.Items.Add(themeMenu);
+            var fontMenu = new Forms.ToolStripMenuItem("Font");
+            foreach (string each in Theme.Fonts)
+            {
+                string name = each; bool installed = Theme.FontInstalled(name);
+                fontMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(installed ? name : name + "  (not installed)", null, delegate { ChooseFont(name); }) { Checked = name == Theme.FontBase, Enabled = installed || name == Theme.FontBase });
+            }
+            menu.Items.Add(fontMenu);
             var clearMenu = new Forms.ToolStripMenuItem("Auto-clear old cards");
             var ages = new[] { new { Name = "Never", Value = 0 }, new { Name = "After 1 day", Value = 1 }, new { Name = "After 7 days", Value = 7 }, new { Name = "After 30 days", Value = 30 } };
             foreach (var choice in ages)
@@ -165,8 +172,8 @@ namespace Snapline
             try
             {
                 var renderer = new TrayRenderer();
-                var font = new Drawing.Font("Barlow Condensed", 11.5f);
-                if (font.Name != "Barlow Condensed") { font.Dispose(); font = new Drawing.Font("Segoe UI", 9.5f); }
+                var font = new Drawing.Font(Theme.FontBase, (float)(9.5 * Theme.FontScale));
+                if (font.Name != Theme.FontBase) { font.Dispose(); font = new Drawing.Font("Segoe UI", 9.5f); }
                 Action<Forms.ToolStripDropDown> dress = null;
                 dress = delegate(Forms.ToolStripDropDown strip)
                 {
@@ -177,23 +184,35 @@ namespace Snapline
             }
             catch (Exception ex) { store.Log("Tray menu style", ex); } // The plain menu still works.
         }
-        // Colours are fixed when the windows are built, so a new theme is applied by starting Snapline again.
+        // Colours and fonts are fixed when the windows are built, so a new theme or font is applied by starting Snapline again.
         void ChooseTheme(string name)
         {
             if (name == Theme.Name) return;
             string before = store.Settings.ThemeName;
             store.Settings.ThemeName = name;
             try { store.SaveSettings(); } catch (Exception ex) { store.Settings.ThemeName = before; store.Log("Theme setting", ex); Notify("Could not save that setting."); return; }
+            RestartToApply("--theme", "the " + name + " theme");
+        }
+        void ChooseFont(string name)
+        {
+            if (name == Theme.FontBase) return;
+            string before = store.Settings.FontName;
+            store.Settings.FontName = name;
+            try { store.SaveSettings(); } catch (Exception ex) { store.Settings.FontName = before; store.Log("Font setting", ex); Notify("Could not save that setting."); return; }
+            RestartToApply("--font", name);
+        }
+        void RestartToApply(string forcedOption, string what)
+        {
             try
             {
                 var arguments = Environment.GetCommandLineArgs().Skip(1).Where(x => x != "--restarted" && x != "--startup").ToList();
-                int forced = arguments.IndexOf("--theme");
+                int forced = arguments.IndexOf(forcedOption);
                 if (forced >= 0) arguments.RemoveRange(forced, Math.Min(2, arguments.Count - forced));
                 arguments.Add("--restarted");
                 Process.Start(new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location,
                     String.Join(" ", arguments.Select(x => "\"" + x.TrimEnd('\\') + "\""))) { UseShellExecute = false });
             }
-            catch (Exception ex) { store.Log("Theme restart", ex); Notify("Saved. Quit and start Snapline again to see the " + name + " theme."); return; }
+            catch (Exception ex) { store.Log("Restart", ex); Notify("Saved. Quit and start Snapline again to see " + what + "."); return; }
             Close();
         }
         void SetAutoClear(int days)
@@ -225,7 +244,7 @@ namespace Snapline
                     "HANG\n" + CaptureShortcutLabel + ": capture a region and hang it (when the shortcut is available).\nCtrl + Alt + D: hang what is on the clipboard.\nCtrl + Alt + N: start a new note.\nDrop a file, folder, link or text on a card. Files and folders hang as references: the original is never moved or deleted.\n'+ Note' on the Tips card: a quick note.\n\n" +
                     "NOTES\nIn the editor: B, I, U (Ctrl + B / I / U) mark the selection **bold**, *italic* or __underlined__. To-do (Ctrl + T) turns lines into [ ] boxes; Tick (Ctrl + D) ticks them.\nOn the line, click a box to tick it. On a note with a picture, clicking the picture copies it; clicking elsewhere copies the text.\n\n" +
                     "USE\nClick a card: copy. Double-click: open or edit.\nDrag along the line: reorder. Pull a card down: drop it into an app, or on the Tips card to delete.\nClick a peg: delete, with Undo for a few seconds.\nRight-click: more, including Keep (yellow peg: never cleared).\n'Add caption' under an image: note what it is for.\n\n" +
-                    "TRAY\nTheme (five palettes; Snapline restarts to apply one), Line tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
+                    "TRAY\nTheme and Font (Snapline restarts to apply one), Line tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
                     "Win + Shift + S and other screenshot tools are not collected. Up to 60 screenshots and 60 reference cards are held; the oldest unkept ones make room.\nRuns entirely on this PC: no network, no uploads.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
             }
             finally { dialogOpen = false; }

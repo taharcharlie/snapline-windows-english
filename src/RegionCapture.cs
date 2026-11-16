@@ -57,7 +57,7 @@ namespace Snapline
 
                 float scale = 1;
                 try { scale = Native.GetDpiForWindow(Handle) / 96f; } catch (EntryPointNotFoundException) { }
-                hintFont = new Font("Barlow Condensed", Math.Max(16, 16 * scale), FontStyle.Regular, GraphicsUnit.Pixel);
+                hintFont = new Font(Theme.FontBase, Math.Max(16, 16 * scale), FontStyle.Regular, GraphicsUnit.Pixel);
                 Shown += delegate
                 {
                     // Use physical desktop pixels, including monitors with negative origins.

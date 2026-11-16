@@ -37,11 +37,29 @@ namespace Snapline
             Accent = p[9]; Green = p[10]; Purple = p[11]; Warn = p[12];
         }
 
-        internal const string FontName = "Barlow Condensed, Segoe UI";
-        internal static readonly FontFamily Font = new FontFamily(FontName);
-
-        // Barlow Condensed is narrow, so every size in the app is scaled up from the original design.
-        internal const double FontScale = 1.2;
+        // Fonts on offer. All but the first ship with Windows; Barlow Condensed is used when it is installed.
+        // The number scales every size in the app from the original design: narrow fonts are set larger, wide ones smaller.
+        internal static readonly string[] Fonts = { "Barlow Condensed", "Segoe UI", "Calibri", "Trebuchet MS", "Georgia", "Consolas" };
+        static readonly double[] FontScales = { 1.2, 1.0, 1.12, 0.96, 0.96, 0.9 };
+        // FontBase is the chosen font alone; FontName adds Segoe UI behind it for PCs where the choice is missing.
+        internal static string FontBase = "Barlow Condensed", FontName = "Barlow Condensed, Segoe UI";
+        internal static FontFamily Font = new FontFamily(FontName);
+        internal static double FontScale = 1.2;
+        // Call once at start-up, with Apply.
+        internal static void ApplyFont(string name)
+        {
+            int index = Math.Max(0, Array.IndexOf(Fonts, name));
+            FontBase = Fonts[index]; FontScale = FontScales[index];
+            // A missing font is drawn in Segoe UI, so it takes Segoe UI's sizes too.
+            if (!FontInstalled(FontBase)) FontScale = 1.0;
+            FontName = FontBase == "Segoe UI" ? FontBase : FontBase + ", Segoe UI";
+            Font = new FontFamily(FontName);
+        }
+        internal static bool FontInstalled(string name)
+        {
+            try { using (var probe = new System.Drawing.Font(name, 10f)) return String.Equals(probe.Name, name, StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
         internal static double Size(double points) { return Math.Round(points * FontScale, 1); }
 
         // "#RRGGBB" plus a two-digit hex alpha gives "#AARRGGBB".

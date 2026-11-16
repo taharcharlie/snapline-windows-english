@@ -61,6 +61,8 @@ namespace Snapline
         [DataMember] public int TriggerLength;
         // One of Theme.Names; empty or unknown reads as Ashes.
         [DataMember] public string ThemeName;
+        // One of Theme.Fonts; empty or unknown reads as Barlow Condensed.
+        [DataMember] public string FontName;
     }
 
     sealed partial class Store

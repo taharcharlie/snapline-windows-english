@@ -20,9 +20,9 @@ namespace Snapline
 
         static readonly FontFamily Symbols = new FontFamily("Segoe UI Symbol");
         // WPF draws every weight and style of a per-user Barlow Condensed as the regular face, and does not slant it either.
-        // So bold names the semibold family outright, and italic uses Segoe UI, which has a real italic.
-        static readonly FontFamily BoldFont = new FontFamily("Barlow Condensed SemiBold, Segoe UI");
-        static readonly FontFamily ItalicFont = new FontFamily("Segoe UI");
+        // So with Barlow, bold names the semibold family outright, and italic is left looking like ordinary text
+        // rather than switching to another font. The other fonts on offer have real bold and italic faces.
+        static readonly FontFamily BarlowBold = new FontFamily("Barlow Condensed SemiBold, Segoe UI");
 
         // 0: an ordinary line. 1: an open to-do. 2: a ticked to-do. "rest" is the line without its box.
         internal static int Todo(string line, out string rest)
@@ -93,9 +93,9 @@ namespace Snapline
                 {
                     if (m.Index > at) target.Add(new Run(text.Substring(at, m.Index - at)));
                     var span = new Span();
-                    if (m.Groups[1].Success) { span.FontWeight = FontWeights.Bold; span.FontFamily = BoldFont; Styled(span.Inlines, m.Groups[1].Value, depth + 1); }
+                    if (m.Groups[1].Success) { span.FontWeight = FontWeights.Bold; if (Theme.FontBase == "Barlow Condensed") span.FontFamily = BarlowBold; Styled(span.Inlines, m.Groups[1].Value, depth + 1); }
                     else if (m.Groups[2].Success) { span.TextDecorations = TextDecorations.Underline; Styled(span.Inlines, m.Groups[2].Value, depth + 1); }
-                    else { span.FontStyle = FontStyles.Italic; span.FontFamily = ItalicFont; Styled(span.Inlines, m.Groups[3].Value, depth + 1); }
+                    else { span.FontStyle = FontStyles.Italic; Styled(span.Inlines, m.Groups[3].Value, depth + 1); }
                     target.Add(span);
                     at = m.Index + m.Length;
                 }

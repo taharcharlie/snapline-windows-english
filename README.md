@@ -55,11 +55,13 @@ While the line is open from `Ctrl+Alt+S`, these plain keys go to Snapline rather
 
 ## Tray menu
 
-Capture shortcut, theme, line tension, touch line length, auto-clear, start at login, keep visible, import images, clear screenshots, help and quit.
+Capture shortcut, theme, font, line tension, touch line length, auto-clear, start at login, keep visible, import images, clear screenshots, help and quit.
 
 The touch line is the thin strip at the top centre that opens the line. It has three lengths: short, medium (one and a half times that), and long, which matches the width of the date and clock in the middle of a komorebi bar.
 
 Theme offers five palettes: Ashes (dark, the default), Paper (light, cool grey), Linen (light, warm), Frost (dark, blue-grey) and Ember (dark, warm). Snapline restarts itself to apply one, which takes about a second. `--theme <name>` starts with a palette without saving the choice.
+
+Font offers Barlow Condensed (the default, used when it is installed) and five fonts that ship with Windows: Segoe UI, Calibri, Trebuchet MS, Georgia and Consolas. Sizes are adjusted to each font. Barlow Condensed has no italic that Windows can draw here, so italic text in notes looks like ordinary text with it; the other fonts show real italics. `--font "<name>"` starts with a font without saving the choice.
 
 ## Limits and data
 

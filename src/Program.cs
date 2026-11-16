@@ -64,6 +64,7 @@ namespace Snapline
                     if (!fresh) { if (!args.Contains("--startup")) Native.PostMessage(new IntPtr(0xffff), Native.ShowMessage, IntPtr.Zero, IntPtr.Zero); return 0; }
                     var store = new Store(root);
                     Theme.Apply(Option(args, "--theme") ?? store.Settings.ThemeName);
+                    Theme.ApplyFont(Option(args, "--font") ?? store.Settings.FontName);
                     var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
                     try { app.Resources.MergedDictionaries.Add(Theme.MenuResources()); }
                     catch (Exception ex) { store.Log("Menu style", ex); } // Plain menus still work.
