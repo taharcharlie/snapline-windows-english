@@ -56,8 +56,14 @@ namespace Snapline
                 bool fresh;
                 using (var mutex = new Mutex(true, "Local\\Snapline-" + BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(root)))).Replace("-", "").Substring(0, 20), out fresh))
                 {
+                    if (!fresh && args.Contains("--restarted"))
+                    {
+                        // Started by a running Snapline that is closing to change theme: wait for it to finish.
+                        try { fresh = mutex.WaitOne(10000); } catch (AbandonedMutexException) { fresh = true; }
+                    }
                     if (!fresh) { if (!args.Contains("--startup")) Native.PostMessage(new IntPtr(0xffff), Native.ShowMessage, IntPtr.Zero, IntPtr.Zero); return 0; }
                     var store = new Store(root);
+                    Theme.Apply(Option(args, "--theme") ?? store.Settings.ThemeName);
                     var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
                     try { app.Resources.MergedDictionaries.Add(Theme.MenuResources()); }
                     catch (Exception ex) { store.Log("Menu style", ex); } // Plain menus still work.

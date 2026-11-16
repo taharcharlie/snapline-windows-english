@@ -112,7 +112,7 @@ namespace Snapline
                 if (Selection.Width > 0 && Selection.Height > 0)
                 {
                     e.Graphics.DrawImage(pixels, Selection, Selection, GraphicsUnit.Pixel);
-                    using (var border = new Pen(Color.FromArgb(199, 199, 149), 2))
+                    using (var border = new Pen(ColorTranslator.FromHtml(Theme.Accent), 2))
                         e.Graphics.DrawRectangle(border, Selection.X, Selection.Y, Selection.Width - 1, Selection.Height - 1);
                 }
                 var pointer = Pointer();
@@ -121,8 +121,8 @@ namespace Snapline
                 int width = (int)Math.Ceiling(size.Width) + 24, height = (int)Math.Ceiling(size.Height) + 18;
                 int x = Math.Max(8, Math.Min(desktop.Width - width - 8, pointer.X + 18));
                 int y = Math.Max(8, Math.Min(desktop.Height - height - 8, pointer.Y + 22));
-                using (var background = new SolidBrush(Color.FromArgb(235, 28, 32, 35))) e.Graphics.FillRectangle(background, x, y, width, height);
-                e.Graphics.DrawString(hint, hintFont, Brushes.White, x + 12, y + 9);
+                using (var background = new SolidBrush(Color.FromArgb(235, ColorTranslator.FromHtml(Theme.Bg)))) e.Graphics.FillRectangle(background, x, y, width, height);
+                using (var ink = new SolidBrush(ColorTranslator.FromHtml(Theme.White))) e.Graphics.DrawString(hint, hintFont, ink, x + 12, y + 9);
             }
             protected override void Dispose(bool disposing)
             {

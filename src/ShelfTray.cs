@@ -76,6 +76,13 @@ namespace Snapline
             }
             triggerMenu.DropDownOpening += delegate { foreach (Forms.ToolStripMenuItem item in triggerMenu.DropDownItems) item.Checked = (int)item.Tag == store.Settings.TriggerLength; };
             menu.Items.Add(triggerMenu);
+            var themeMenu = new Forms.ToolStripMenuItem("Theme");
+            for (int i = 0; i < Theme.Names.Length; i++)
+            {
+                string name = Theme.Names[i];
+                themeMenu.DropDownItems.Add(new Forms.ToolStripMenuItem(name + "  (" + Theme.Hints[i] + ")", null, delegate { ChooseTheme(name); }) { Tag = name, Checked = name == Theme.Name });
+            }
+            menu.Items.Add(themeMenu);
             var clearMenu = new Forms.ToolStripMenuItem("Auto-clear old cards");
             var ages = new[] { new { Name = "Never", Value = 0 }, new { Name = "After 1 day", Value = 1 }, new { Name = "After 7 days", Value = 7 }, new { Name = "After 30 days", Value = 30 } };
             foreach (var choice in ages)
@@ -170,6 +177,25 @@ namespace Snapline
             }
             catch (Exception ex) { store.Log("Tray menu style", ex); } // The plain menu still works.
         }
+        // Colours are fixed when the windows are built, so a new theme is applied by starting Snapline again.
+        void ChooseTheme(string name)
+        {
+            if (name == Theme.Name) return;
+            string before = store.Settings.ThemeName;
+            store.Settings.ThemeName = name;
+            try { store.SaveSettings(); } catch (Exception ex) { store.Settings.ThemeName = before; store.Log("Theme setting", ex); Notify("Could not save that setting."); return; }
+            try
+            {
+                var arguments = Environment.GetCommandLineArgs().Skip(1).Where(x => x != "--restarted" && x != "--startup").ToList();
+                int forced = arguments.IndexOf("--theme");
+                if (forced >= 0) arguments.RemoveRange(forced, Math.Min(2, arguments.Count - forced));
+                arguments.Add("--restarted");
+                Process.Start(new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location,
+                    String.Join(" ", arguments.Select(x => "\"" + x.TrimEnd('\\') + "\""))) { UseShellExecute = false });
+            }
+            catch (Exception ex) { store.Log("Theme restart", ex); Notify("Saved. Quit and start Snapline again to see the " + name + " theme."); return; }
+            Close();
+        }
         void SetAutoClear(int days)
         {
             int due = store.Expired(days).Count;
@@ -198,7 +224,7 @@ namespace Snapline
                     "OPEN\nTouch the line at the top centre, or press Ctrl + Alt + S (stays open; arrows roll, Enter or 1 to 9 copies, Esc closes).\nDouble-click the tray icon: open until you leave.\n\n" +
                     "HANG\n" + CaptureShortcutLabel + ": capture a region and hang it (when the shortcut is available).\nCtrl + Alt + D: hang what is on the clipboard.\nCtrl + Alt + N: start a new note.\nDrop a file, folder, link or text on a card. Files and folders hang as references: the original is never moved or deleted.\n'+ Note' on the Tips card: a quick note.\n\n" +
                     "USE\nClick a card: copy. Double-click: open or edit.\nDrag along the line: reorder. Pull a card down: drop it into an app, or on the Tips card to delete.\nClick a peg: delete, with Undo for a few seconds.\nRight-click: more, including Keep (yellow peg: never cleared).\n'Add caption' under an image: note what it is for.\n\n" +
-                    "TRAY\nLine tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
+                    "TRAY\nTheme (five palettes; Snapline restarts to apply one), Line tension, Auto-clear old cards (off unless you turn it on), Start at login, capture shortcut.\n\n" +
                     "Win + Shift + S and other screenshot tools are not collected. Up to 60 screenshots and 60 reference cards are held; the oldest unkept ones make room.\nRuns entirely on this PC: no network, no uploads.", "Snapline", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
             }
             finally { dialogOpen = false; }

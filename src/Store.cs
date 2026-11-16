@@ -59,6 +59,8 @@ namespace Snapline
         [DataMember] public int AutoClearDays;
         // Length of the line you touch to open: 0 short, 1 one and a half times that, 2 as wide as the bar's date and clock.
         [DataMember] public int TriggerLength;
+        // One of Theme.Names; empty or unknown reads as Ashes.
+        [DataMember] public string ThemeName;
     }
 
     sealed partial class Store
