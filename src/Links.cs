@@ -197,7 +197,9 @@ namespace Snapline
         void Activate(object item)
         {
             var shot = item as Shot; var memo = item as Memo; var link = item as Link;
-            if (shot != null) Copy(shot); else if (memo != null) CopyNote(memo); else if (link != null) CopyLink(link);
+            if (shot != null) Copy(shot);
+            else if (memo != null) { if (memo.Picture != null && String.IsNullOrWhiteSpace(memo.Text)) CopyNotePicture(memo); else CopyNote(memo); }
+            else if (link != null) CopyLink(link);
         }
         void OpenItem(object item)
         {

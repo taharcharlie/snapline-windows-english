@@ -131,7 +131,7 @@ namespace Snapline
                 if (path == null || !File.Exists(path)) { Notify("That note's picture file is missing."); return; }
                 var data = new DataObject();
                 data.SetImage(Store.Load(path));
-                SetClipboard(data); Flash(note, "Copied");
+                SetClipboard(data); Flash(note, "Picture copied");
             }
             catch (Exception ex) { store.Log("Copy note picture", ex); Notify("Copy failed. Try again shortly."); }
         }

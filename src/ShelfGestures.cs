@@ -149,12 +149,12 @@ namespace Snapline
         void AttachGestures(FrameworkElement card, object item)
         {
             var shot = item as Shot; var memo = item as Memo;
-            bool down = false, held = false, reorder = false;
+            bool down = false, held = false, reorder = false, onPicture = false;
             Point start = new Point(); double grabX = 0;
             // A note waits for a possible second click before it copies, so that opening a note to paste something
             // into it does not first replace what is on the clipboard.
             var clickDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(System.Windows.Forms.SystemInformation.DoubleClickTime + 20) };
-            clickDelay.Tick += delegate { clickDelay.Stop(); if (memo != null && store.Notes.Contains(memo) && !dialogOpen && !dragging) Activate(item); };
+            clickDelay.Tick += delegate { clickDelay.Stop(); if (memo != null && store.Notes.Contains(memo) && !dialogOpen && !dragging) { if (onPicture && memo.Picture != null) CopyNotePicture(memo); else Activate(item); } };
             var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
             hold.Tick += delegate { hold.Stop(); if (down && !reorder && shot != null) { held = true; down = false; card.ReleaseMouseCapture(); Edit(shot); } };
             card.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
@@ -197,9 +197,25 @@ namespace Snapline
                 hold.Stop(); bool wasDown = down, wasReorder = reorder; down = reorder = false; card.ReleaseMouseCapture(); e.Handled = true;
                 if (wasReorder) { EndReorder(card, true); return; }
                 if (!wasDown || held) return;
-                if (memo != null) { clickDelay.Stop(); clickDelay.Start(); } else Activate(item);
+                if (memo == null) { Activate(item); return; }
+                // On a note with a picture, a click on the picture copies the picture and a click anywhere else copies the text.
+                var picture = Tagged(card, "NotePicture");
+                var at = picture == null ? new Point(-1, -1) : e.GetPosition(picture);
+                onPicture = picture != null && at.X >= 0 && at.Y >= 0 && at.X <= picture.ActualWidth && at.Y <= picture.ActualHeight;
+                clickDelay.Stop(); clickDelay.Start();
             };
             card.LostMouseCapture += delegate { hold.Stop(); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
+        }
+        static FrameworkElement Tagged(DependencyObject root, string tag)
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i); var element = child as FrameworkElement;
+                if (element != null && tag.Equals(element.Tag)) return element;
+                var found = Tagged(child, tag);
+                if (found != null) return found;
+            }
+            return null;
         }
         bool BeginReorder(FrameworkElement card)
         {

@@ -83,7 +83,7 @@ namespace Snapline
                     if (args.Contains("--demo-notes") && store.Notes.Count == 0)
                     {
                         store.AddNote("Weekend plan\\nWalk in the park, bring the camera.\\n\\nLeave some time to slow down.".Replace("\\n", "\n"), "Butter");
-                        store.AddNote("Today\\nSort the files, answer one email,\\nand leave room for a new idea.".Replace("\\n", "\n"), "Mint");
+                        store.AddNote("**Today**\\n[x] Sort the files\\n[ ] Answer *one* email\\n[ ] Leave room for an idea".Replace("\\n", "\n"), "Mint");
                         store.AddNote("A small idea\\nWrite things down\\nand hang them up like photos.".Replace("\\n", "\n"), "Lavender");
                     }
                     if (demo && args.Contains("--demo-remarks") && store.Items.Count > 0)
@@ -108,6 +108,12 @@ namespace Snapline
                         {
                             delay.Stop();
                             if (snapshot != null) shelf.Snapshot(snapshot);
+                            string editorSnapshot = Option(args, "--editor-snapshot");
+                            if (editorSnapshot != null && store.Notes.Count > 0)
+                            {
+                                var editor = new MemoEditor(store, store.Notes.FirstOrDefault(x => NoteMarkup.HasTodo(x.Text)) ?? store.Notes[0]);
+                                editor.Show(); editor.Snapshot(editorSnapshot); editor.Close();
+                            }
                             if (diagnostics != null) System.IO.File.WriteAllText(diagnostics, "collectionMode=ConfiguredShortcutOnly" + Environment.NewLine + "captureUi=BuiltinRegion" + Environment.NewLine + "clipboardListener=" + shelf.ClipboardRegistered + Environment.NewLine + "hotkey=" + shelf.HotkeyRegistered + Environment.NewLine + "captureHotkey=" + shelf.CaptureHotkeyRegistered + Environment.NewLine + "captureShortcut=" + shelf.CaptureShortcutLabel + Environment.NewLine + "items=" + store.Items.Count + Environment.NewLine + "notes=" + store.Notes.Count + Environment.NewLine + "expanded=" + shelf.Expanded + Environment.NewLine + "startupManaged=" + (shelf.Startup != null) + Environment.NewLine + "startupEnabled=" + store.Settings.StartupEnabled + Environment.NewLine + "windowHandle=" + new WindowInteropHelper(shelf).Handle.ToInt64() + Environment.NewLine);
                         };
                         delay.Start();

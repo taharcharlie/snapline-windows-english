@@ -17,7 +17,8 @@ Everything runs on your PC. The app has no network code, uploads nothing, and do
 - Reorder by dragging, pull a card off to drop it elsewhere, delete on a peg or a bin, with Undo. "Keep" protects a card from every kind of clearing and gives it a yellow edge.
 - Files, folders and web addresses hang as reference cards. The original is never moved, changed or deleted.
 - Hang the clipboard with one shortcut; copy a card by its number.
-- A note can carry one picture: copy an image, open the note and press `Ctrl+V`.
+- A note can carry one picture: copy an image, open the note and press `Ctrl+V`. On the line, clicking the picture copies the picture and clicking the rest of the note copies its text; a note with only a picture copies the picture wherever you click.
+- Notes take light formatting. In the editor, `B`, `I` and `U` (`Ctrl+B`, `Ctrl+I`, `Ctrl+U`) mark the selection `**bold**`, `*italic*` or `__underlined__`. `To-do` (`Ctrl+T`) turns lines into `[ ]` boxes and `Tick` (`Ctrl+D`) ticks them; Enter at the end of a to-do starts the next one. The note stays plain text with these marks, and the card on the line draws them. Click a box on the card to tick it without opening the note. Copying a note leaves the bold, italic and underline marks out.
 - Optional auto-clear of old cards.
 - Start at login is off until you turn it on.
 - The cards hang still and skip the falling animation on battery, or when Windows animations are off.
@@ -81,7 +82,7 @@ The result is `dist\Snapline.exe`. `--self-test` runs the built-in checks.
 | File | Contents |
 |---|---|
 | `src\Theme.cs` | Colours, font, menu styles, calm mode |
-| `src\Store.cs`, `Memo.cs`, `Links.cs` | Saved data: screenshots, notes, reference cards |
+| `src\Store.cs`, `Memo.cs`, `NoteMarkup.cs`, `Links.cs` | Saved data: screenshots, notes, reference cards |
 | `src\Shelf*.cs` | The line window: layout, gestures, motion, capture, tray |
 | `src\Remark.cs`, `ShortcutEditor.cs`, `RegionCapture.cs` | Caption editor, shortcut dialog, capture overlay |
 | `src\*Tests.cs`, `Integration.cs` | Built-in self-tests |

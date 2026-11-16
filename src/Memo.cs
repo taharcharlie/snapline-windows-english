@@ -197,6 +197,27 @@ namespace Snapline
                 choice.Click += delegate { color = mode; UpdatePaper(); MarkDirty(); };
                 palette.Children.Add(choice);
             }
+            // Formatting buttons. They never take the focus, so the selection in the text stays put.
+            var tools = new[]
+            {
+                new { Label = "B", Name = "Bold", Tip = "Bold  (Ctrl+B)", Run = (Action)delegate { Wrap("**"); } },
+                new { Label = "I", Name = "Italic", Tip = "Italic  (Ctrl+I)", Run = (Action)delegate { Wrap("*"); } },
+                new { Label = "U", Name = "Underline", Tip = "Underline  (Ctrl+U)", Run = (Action)delegate { Wrap("__"); } },
+                new { Label = "☐ To-do", Name = "Todo", Tip = "Make the line a to-do, or back  (Ctrl+T)", Run = (Action)delegate { ToggleTodo(); } },
+                new { Label = "☑ Tick", Name = "Tick", Tip = "Tick or untick the to-do  (Ctrl+D)", Run = (Action)delegate { ToggleDone(); } },
+            };
+            foreach (var tool in tools)
+            {
+                var run = tool.Run;
+                var b = MemoTheme.Button(tool.Label, tool.Name); b.Focusable = false; b.ToolTip = tool.Tip; b.Height = 32; b.MinWidth = 32; b.Padding = new Thickness(9, 0, 9, 0);
+                b.Margin = new Thickness(tool.Name == "Bold" ? 18 : 0, 0, 4, 0);
+                if (tool.Name == "Bold") b.FontWeight = FontWeights.Bold;
+                if (tool.Name == "Italic") b.FontStyle = FontStyles.Italic;
+                if (tool.Name == "Underline") b.Content = new TextBlock { Text = "U", TextDecorations = TextDecorations.Underline };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(b, "NoteFormat-" + tool.Name);
+                b.Click += delegate { run(); };
+                palette.Children.Add(b);
+            }
             Grid.SetRow(palette, 1); content.Children.Add(palette);
             Grid.SetRow(pictureRow, 2); content.Children.Add(pictureRow);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 15) };
@@ -233,10 +254,87 @@ namespace Snapline
                 // Ctrl+V or Shift+Insert with a picture on the clipboard attaches it; with text it pastes as usual.
                 bool paste = (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control) || (e.Key == Key.Insert && Keyboard.Modifiers == ModifierKeys.Shift);
                 if (paste && PastePicture()) { e.Handled = true; return; }
+                if (Keyboard.Modifiers == ModifierKeys.Control && input.IsKeyboardFocused)
+                {
+                    Action format = e.Key == Key.B ? delegate { Wrap("**"); } : e.Key == Key.I ? delegate { Wrap("*"); } : e.Key == Key.U ? delegate { Wrap("__"); }
+                        : e.Key == Key.T ? delegate { ToggleTodo(); } : e.Key == Key.D ? (Action)delegate { ToggleDone(); } : null;
+                    if (format != null) { e.Handled = true; format(); return; }
+                }
+                if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && input.IsKeyboardFocused && ContinueTodo()) { e.Handled = true; return; }
                 if (e.Key == Key.Escape || (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)) { e.Handled = true; Close(); }
             };
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (!FlushChanges()) e.Cancel = true; };
             Closed += delegate { saveDelay.Stop(); };
+        }
+        // Puts the mark around the selection, or takes it off when the selection already has it.
+        internal void Wrap(string mark)
+        {
+            int start = input.SelectionStart, length = input.SelectionLength;
+            string chosen = input.SelectedText;
+            bool wrapped = chosen.Length >= 2 * mark.Length + 1 && chosen.StartsWith(mark, StringComparison.Ordinal) && chosen.EndsWith(mark, StringComparison.Ordinal)
+                && !(mark == "*" && chosen.StartsWith("**", StringComparison.Ordinal) && !chosen.StartsWith("***", StringComparison.Ordinal));
+            if (wrapped) { input.SelectedText = chosen.Substring(mark.Length, chosen.Length - 2 * mark.Length); input.Select(start, length - 2 * mark.Length); }
+            else if (input.Text.Length + 2 * mark.Length <= Store.MaxNoteText) { input.SelectedText = mark + chosen + mark; input.Select(start + mark.Length, length); }
+            input.Focus();
+        }
+        // Start and length of the whole lines that the selection touches.
+        void SelectedLines(out int start, out int length)
+        {
+            string text = input.Text;
+            int from = input.SelectionStart, to = from + input.SelectionLength;
+            if (to > from && text[to - 1] == '\n') to--; // A selection that ends at the start of a line does not include that line.
+            start = from == 0 ? 0 : text.LastIndexOf('\n', from - 1) + 1;
+            int end = text.IndexOf('\n', to);
+            if (end < 0) end = text.Length; else if (end > start && text[end - 1] == '\r') end--;
+            length = Math.Max(0, end - start);
+        }
+        void ReplaceLines(Func<string, string> change)
+        {
+            int start, length; SelectedLines(out start, out length);
+            string[] lines = input.Text.Substring(start, length).Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                bool cr = lines[i].EndsWith("\r", StringComparison.Ordinal);
+                lines[i] = change(cr ? lines[i].Substring(0, lines[i].Length - 1) : lines[i]) + (cr ? "\r" : "");
+            }
+            string result = String.Join("\n", lines);
+            if (input.Text.Length - length + result.Length > Store.MaxNoteText) return;
+            input.Select(start, length); input.SelectedText = result; input.Select(start + result.Length, 0); input.Focus();
+        }
+        internal void ToggleTodo()
+        {
+            int start, length; SelectedLines(out start, out length);
+            string rest; bool all = true;
+            foreach (string line in input.Text.Substring(start, length).Split('\n'))
+                if (line.Trim().Length > 0 && NoteMarkup.Todo(line, out rest) == 0) all = false;
+            ReplaceLines(delegate(string line)
+            {
+                string body; int state = NoteMarkup.Todo(line, out body);
+                if (all) return state == 0 ? line : body;
+                return state != 0 || (line.Trim().Length == 0 && length > 0) ? line : "[ ] " + line;
+            });
+        }
+        internal void ToggleDone()
+        {
+            ReplaceLines(delegate(string line)
+            {
+                string body; int state = NoteMarkup.Todo(line, out body);
+                return state == 0 ? line : NoteMarkup.Toggle(line, 0);
+            });
+        }
+        // Enter at the end of a to-do starts the next one; Enter on an empty to-do ends the list.
+        internal bool ContinueTodo()
+        {
+            if (input.SelectionLength > 0) return false;
+            string text = input.Text; int caret = input.SelectionStart;
+            int start = caret == 0 ? 0 : text.LastIndexOf('\n', caret - 1) + 1;
+            int end = text.IndexOf('\n', caret); if (end < 0) end = text.Length; else if (end > start && text[end - 1] == '\r') end--;
+            string body;
+            if (caret != end || NoteMarkup.Todo(text.Substring(start, end - start), out body) == 0) return false;
+            if (body.Trim().Length == 0) { input.Select(start, end - start); input.SelectedText = ""; input.Select(start, 0); return true; }
+            if (text.Length + 6 > Store.MaxNoteText) return false;
+            input.SelectedText = "\r\n[ ] "; input.Select(caret + 6, 0);
+            return true;
         }
         void UpdatePaper()
         {
@@ -296,6 +394,16 @@ namespace Snapline
                 store.Log("Save memo", ex); status.Text = "Could not save. Your text is kept in this window; try again shortly."; status.Foreground = MemoTheme.Brush(Theme.Warn); return false;
             }
         }
+        internal TextBox Input { get { return input; } }
+        // For --editor-snapshot: a picture of the editor, to check a theme without opening it by hand.
+        internal void Snapshot(string file)
+        {
+            UpdateLayout();
+            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(this);
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            using (var stream = File.Create(file)) encoder.Save(stream);
+        }
         internal bool IsBlank { get { return String.IsNullOrWhiteSpace(input.Text) && memo.Picture == null; } }
     }
 
@@ -335,7 +443,7 @@ namespace Snapline
         }
         void CopyNote(Memo note)
         {
-            try { SetClipboard(new DataObject(DataFormats.UnicodeText, note.Text)); Flash(note, "Copied"); }
+            try { SetClipboard(new DataObject(DataFormats.UnicodeText, NoteMarkup.Plain(note.Text))); Flash(note, note.Picture != null ? "Text copied" : "Copied"); }
             catch (Exception ex) { store.Log("Copy memo", ex); Notify("Copy failed. Try again shortly."); }
         }
         void DeleteNote(Memo note)
@@ -358,6 +466,7 @@ namespace Snapline
             content.Children.Add(picture);
             var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, Theme.Light);
             text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
+            if (!String.IsNullOrWhiteSpace(note.Text)) NoteMarkup.Fill(text, note.Text, MemoTheme.Accent(note.Color), null);
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             content.Children.Add(scroll);
             content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to edit", FontSize = Theme.Size(11), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
@@ -409,13 +518,23 @@ namespace Snapline
             var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 15, Theme.Light);
             body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = 22;
             body.Margin = new Thickness(0, 9, 0, 5); body.ClipToBounds = true;
+            if (!String.IsNullOrWhiteSpace(note.Text))
+            {
+                NoteMarkup.Fill(body, note.Text, MemoTheme.Accent(note.Color), delegate(int line)
+                {
+                    try { store.UpdateNote(note, NoteMarkup.Toggle(note.Text, line), note.Color); keepUntil = DateTime.Now.AddSeconds(3); }
+                    catch (Exception ex) { store.Log("Tick to-do", ex); Notify("Could not save that. Try again shortly."); }
+                });
+                // The boxes are the only part of the text that takes clicks; everything else falls through to the card.
+                if (NoteMarkup.HasTodo(note.Text)) details.IsHitTestVisible = true;
+            }
             var thumb = store.NoteThumb(note);
             if (thumb == null) { Grid.SetRow(body, 1); details.Children.Add(body); }
             else
             {
                 bool wordless = String.IsNullOrWhiteSpace(note.Text);
                 var middle = new DockPanel { Margin = new Thickness(0, 8, 0, 4), LastChildFill = true };
-                var frame = new Border { Height = wordless ? 88 : 50, ClipToBounds = true, Background = MemoTheme.Brush(Theme.Inset),
+                var frame = new Border { Height = wordless ? 88 : 50, ClipToBounds = true, Tag = "NotePicture", Background = MemoTheme.Brush(Theme.Inset),
                     Child = new Image { Source = thumb, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
                 DockPanel.SetDock(frame, Dock.Top); middle.Children.Add(frame);
                 if (wordless) body.Visibility = Visibility.Collapsed; else body.Margin = new Thickness(0, 5, 0, 0);
@@ -492,6 +611,35 @@ namespace Snapline
             try { damaged.AddNote("replacement", "Butter"); } catch (InvalidOperationException) { refused = true; }
             Check(refused && damaged.Notes.Count == 0 && File.ReadAllText(corruptFile) == "{broken-notes", "Unreadable notes never overwritten");
             report.Add("PASS: unreadable notes file is preserved rather than overwritten");
+            string rest;
+            Check(NoteMarkup.Todo("[ ] milk", out rest) == 1 && rest == "milk" && NoteMarkup.Todo("- [x] done", out rest) == 2 && rest == "done" && NoteMarkup.Todo("[X]", out rest) == 2 && rest == ""
+                && NoteMarkup.Todo("[y] no", out rest) == 0 && NoteMarkup.Todo("[ ]tight", out rest) == 0 && NoteMarkup.Todo("text [ ] later", out rest) == 0, "To-do lines recognised");
+            Check(NoteMarkup.Toggle("a\r\n[ ] b\r\n- [x] c", 1) == "a\r\n[x] b\r\n- [x] c" && NoteMarkup.Toggle("a\n[ ] b\n- [x] c", 2) == "a\n[ ] b\n- [ ] c" && NoteMarkup.Toggle("a\n[ ] b", 0) == "a\n[ ] b" && NoteMarkup.Toggle("x", 9) == "x", "Ticking changes one box only");
+            Check(NoteMarkup.Plain("**bold** and *it* and __un__, 2*3*4, a_b__c, [x] **done**") == "bold and it and un, 2*3*4, a_b__c, [x] done" && NoteMarkup.Plain("** spaced **") == "** spaced **" && NoteMarkup.Plain(body) == body, "Marks stripped for copying, other text untouched");
+            var drawn = new TextBlock(); NoteMarkup.Fill(drawn, "**b** *i* __u__\r\n[x] one\n[ ] two", Theme.Accent, null);
+            Check(drawn.Inlines.Count == 11 && drawn.Inlines.OfType<System.Windows.Documents.Run>().Count(x => x.Text == "☑ " || x.Text == "☐ ") == 2 && drawn.Inlines.OfType<System.Windows.Documents.LineBreak>().Count() == 2
+                && ((System.Windows.Documents.Span)drawn.Inlines.FirstInline).FontWeight == FontWeights.Bold, "Marks drawn as bold, italic, underline and boxes");
+            report.Add("PASS: to-do lines, ticking, mark stripping and drawing");
+            var draft = store.AddNote("", "Butter");
+            var editor = new MemoEditor(store, draft); var box = editor.Input;
+            box.Text = "one two"; box.Select(4, 3); editor.Wrap("**");
+            Check(box.Text == "one **two**" && box.SelectedText == "two", "Bold wraps the selection");
+            box.Select(4, 7); editor.Wrap("**");
+            Check(box.Text == "one two" && box.SelectedText == "two", "Bold again unwraps");
+            box.Select(0, 3); editor.Wrap("*"); box.Select(box.Text.Length, 0); editor.Wrap("__");
+            Check(box.Text == "*one* two____" && box.SelectionStart == box.Text.Length - 2, "Italic wraps; underline with no selection leaves the caret inside");
+            box.Text = "milk\r\neggs\r\ntea"; box.Select(1, 8); editor.ToggleTodo();
+            Check(box.Text == "[ ] milk\r\n[ ] eggs\r\ntea", "To-do marks the selected lines");
+            box.Select(2, 0); editor.ToggleDone();
+            Check(box.Text == "[x] milk\r\n[ ] eggs\r\ntea", "Tick marks the caret line");
+            box.Select(18, 0); Check(editor.ContinueTodo() && box.Text == "[x] milk\r\n[ ] eggs\r\n[ ] \r\ntea" && box.SelectionStart == 24, "Enter continues the list");
+            Check(editor.ContinueTodo() && box.Text == "[x] milk\r\n[ ] eggs\r\n\r\ntea" && box.SelectionStart == 20, "Enter on an empty to-do ends the list");
+            box.Select(box.Text.Length, 0); Check(!editor.ContinueTodo(), "Enter on an ordinary line is left alone");
+            box.Select(0, 18); editor.ToggleTodo();
+            Check(box.Text == "milk\r\neggs\r\n\r\ntea", "To-do again removes the boxes");
+            Check(editor.FlushChanges() && new Store(root).Notes.Any(x => x.Id == draft.Id && x.Text == box.Text), "Formatted text is saved as typed");
+            editor.Close(); store.RemoveNote(draft);
+            report.Add("PASS: editor bold/italic/underline wrap and unwrap; to-do, tick and list continuation");
             File.WriteAllLines(System.IO.Path.Combine(root, "memo-results.txt"), report, Encoding.UTF8);
             return 0;
         }
