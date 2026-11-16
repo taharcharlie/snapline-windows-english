@@ -6,10 +6,12 @@ This is an English fork of [TE1233/snapline-windows](https://github.com/TE1233/s
 
 Everything runs on your PC. The app has no network code, uploads nothing, and does not change Windows screenshot settings.
 
+![The line with sample notes and screenshots in each of the five themes: Ashes, Paper, Linen, Frost and Ember](docs/themes.png)
+
 ## What is different from upstream
 
 - English interface.
-- Dark, square Ashes theme with the Barlow Condensed font (falls back to Segoe UI if it is not installed).
+- Square look in five themes (Ashes by default, two light, two more dark) with the Barlow Condensed font (falls back to Segoe UI if it is not installed).
 - The line hangs from a [komorebi-bar](https://github.com/LGUG2Z/komorebi) at the top of the screen when one is running, and its tension is adjustable.
 - The line rolls: any number of cards, with the focused card enlarged, driven by wheel, drag or keyboard.
 - Reorder by dragging, pull a card off to drop it elsewhere, delete on a peg or a bin, with Undo. "Keep" protects a card from every kind of clearing and gives it a yellow edge.
