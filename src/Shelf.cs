@@ -428,6 +428,19 @@ namespace Snapline
             Reveal(); UpdateToast();
         }
 
+        // For --card-rects: where each note card is on the screen, in real pixels, so a test can point at one.
+        internal void WriteCardRects(string file)
+        {
+            var lines = new List<string> { "expanded=" + expanded };
+            foreach (var card in canvas.Children.OfType<FrameworkElement>())
+            {
+                var note = card.Tag as Memo;
+                if (note == null || PresentationSource.FromVisual(card) == null) continue;
+                var a = card.PointToScreen(new Point(0, 0)); var b = card.PointToScreen(new Point(card.Width, card.Height));
+                lines.Add(String.Join("|", (int)a.X, (int)a.Y, (int)(b.X - a.X), (int)(b.Y - a.Y), note.Picture != null, note.Text.Split('\n')[0]));
+            }
+            System.IO.File.WriteAllLines(file, lines);
+        }
         internal void Snapshot(string file)
         {
             canvas.Measure(new System.Windows.Size(shelfWidth, 270));

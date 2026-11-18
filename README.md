@@ -17,7 +17,7 @@ Everything runs on your PC. The app has no network code, uploads nothing, and do
 - Reorder by dragging, pull a card off to drop it elsewhere, delete on a peg or a bin, with Undo. "Keep" protects a card from every kind of clearing and gives it a yellow edge.
 - Files, folders and web addresses hang as reference cards. The original is never moved, changed or deleted.
 - Hang the clipboard with one shortcut; copy a card by its number.
-- A note can carry one picture: copy an image, open the note and press `Ctrl+V`. On the line, clicking the picture copies the picture and clicking the rest of the note copies its text; a note with only a picture copies the picture wherever you click.
+- A note can carry one picture: copy an image, open the note and press `Ctrl+V`. On the line, clicking the picture copies the picture and clicking the rest of the note copies its text; a note with only a picture copies the picture wherever you click. Resting the pointer on the picture previews the picture alone, large; resting it on the rest of the note previews the whole note. Right-click a note with a picture and choose `Open picture` to see it in your image viewer.
 - Notes take light formatting. In the editor, `B`, `I` and `U` (`Ctrl+B`, `Ctrl+I`, `Ctrl+U`) mark the selection `**bold**`, `*italic*` or `__underlined__`. `To-do` (`Ctrl+T`) turns lines into `[ ]` boxes and `Tick` (`Ctrl+D`) ticks them; Enter at the end of a to-do starts the next one. The note stays plain text with these marks, and the card on the line draws them. Click a box on the card to tick it without opening the note. Copying a note leaves the bold, italic and underline marks out.
 - Optional auto-clear of old cards.
 - Start at login is off until you turn it on.

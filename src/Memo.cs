@@ -497,6 +497,41 @@ namespace Snapline
             tip.Closed += delegate { if (Object.ReferenceEquals(noteTip, tip)) noteTip = null; lastInside = DateTime.Now; };
             return tip;
         }
+        // The picture of a note on its own, large. Shown while the pointer is on the picture part of a card that also has text.
+        ToolTip NotePicturePopup(Memo note, FrameworkElement card, System.Windows.Media.Imaging.BitmapSource thumb)
+        {
+            double dpi = Dpi();
+            double maxWidth = Math.Max(100, Math.Min(760, screen.WorkingArea.Width / dpi - 64));
+            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300));
+            double aspect = thumb.PixelWidth / (double)Math.Max(1, thumb.PixelHeight);
+            double width = Math.Min(maxWidth, maxHeight * aspect), height = width / aspect;
+            var preview = new Image { Width = width, Height = height, Stretch = Stretch.Uniform };
+            var tip = new ToolTip { Content = new Border { Child = preview, Padding = new Thickness(10), CornerRadius = Theme.Radius(9), Background = MemoTheme.Paper(note.Color),
+                    BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1) },
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HasDropShadow = true, IsHitTestVisible = false,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, PlacementTarget = card,
+                HorizontalOffset = (card.Width - width - 22) / 2, VerticalOffset = 10, FontFamily = FontFamily };
+            System.Windows.Automation.AutomationProperties.SetName(tip, "Note picture");
+            tip.Opened += delegate
+            {
+                if (!HoverPreviewAllowed || Mouse.LeftButton == MouseButtonState.Pressed || !store.Notes.Contains(note)) { tip.IsOpen = false; return; }
+                try
+                {
+                    string file = store.NotePicturePath(note);
+                    if (file == null || !File.Exists(file)) { tip.IsOpen = false; return; }
+                    CloseNotePreview(); CloseImagePreview(); if (helpTip != null) helpTip.IsOpen = false;
+                    preview.Source = Store.Preview(file, (int)Math.Ceiling(maxWidth * dpi), (int)Math.Ceiling(maxHeight * dpi), aspect);
+                    noteTip = tip;
+                }
+                catch (Exception ex) { tip.IsOpen = false; store.Log("Preview note picture", ex); }
+            };
+            tip.Closed += delegate
+            {
+                preview.Source = null; // Release the enlarged bitmap as soon as the pointer leaves.
+                if (Object.ReferenceEquals(noteTip, tip)) noteTip = null; lastInside = DateTime.Now;
+            };
+            return tip;
+        }
         void MakeNoteCard(Memo note, double center, double y, int index)
         {
             const double width = 182, height = 153;
@@ -537,7 +572,17 @@ namespace Snapline
                 var frame = new Border { Height = wordless ? 88 : 50, ClipToBounds = true, Tag = "NotePicture", Background = MemoTheme.Brush(Theme.Inset),
                     Child = new Image { Source = thumb, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
                 DockPanel.SetDock(frame, Dock.Top); middle.Children.Add(frame);
-                if (wordless) body.Visibility = Visibility.Collapsed; else body.Margin = new Thickness(0, 5, 0, 0);
+                if (wordless) body.Visibility = Visibility.Collapsed;
+                else
+                {
+                    body.Margin = new Thickness(0, 5, 0, 0);
+                    // With the pointer on the picture, the preview shows the picture alone; on the rest of the card it shows the whole note.
+                    // The picture has to take the pointer for that. Clicks on it still travel up to the card.
+                    details.IsHitTestVisible = true;
+                    frame.ToolTip = NotePicturePopup(note, grid, thumb);
+                    ToolTipService.SetInitialShowDelay(frame, 280); ToolTipService.SetBetweenShowDelay(frame, 100); ToolTipService.SetShowDuration(frame, 60000);
+                    RegisterHoverPreview(frame);
+                }
                 middle.Children.Add(body);
                 Grid.SetRow(middle, 1); details.Children.Add(middle);
             }
@@ -549,7 +594,11 @@ namespace Snapline
             remove.HorizontalAlignment = HorizontalAlignment.Right; remove.VerticalAlignment = VerticalAlignment.Top; remove.Margin = new Thickness(0, -9, -8, 0); remove.Opacity = 0; remove.IsHitTestVisible = false;
             remove.Click += delegate { DeleteNote(note); }; grid.Children.Add(remove);
             var menu = new ContextMenu(); menu.Items.Add(Item("Edit note", delegate { EditNote(note, false); })); menu.Items.Add(Item("Copy text", delegate { CopyNote(note); }));
-            if (note.Picture != null) menu.Items.Add(Item("Copy picture", delegate { CopyNotePicture(note); }));
+            if (note.Picture != null)
+            {
+                menu.Items.Add(Item("Copy picture", delegate { CopyNotePicture(note); }));
+                menu.Items.Add(Item("Open picture", delegate { OpenNotePicture(note); }));
+            }
             menu.Items.Add(Item(note.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(note); }));
             menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note", delegate { DeleteNote(note); }));
             menu.Opened += delegate { CloseNotePreview(); dialogOpen = true; }; menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; }; grid.ContextMenu = menu;

@@ -123,6 +123,12 @@ namespace Snapline
 
     sealed partial class Shelf
     {
+        void OpenNotePicture(Memo note)
+        {
+            string path = store.NotePicturePath(note);
+            if (path == null || !File.Exists(path)) { Notify("That note's picture file is missing."); return; }
+            Launch(path);
+        }
         void CopyNotePicture(Memo note)
         {
             try

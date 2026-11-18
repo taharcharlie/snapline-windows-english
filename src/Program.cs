@@ -86,6 +86,8 @@ namespace Snapline
                         store.AddNote("Weekend plan\\nWalk in the park, bring the camera.\\n\\nLeave some time to slow down.".Replace("\\n", "\n"), "Butter");
                         store.AddNote("**Today**\\n[x] Sort the files\\n[ ] Answer *one* email\\n[ ] Leave room for an idea".Replace("\\n", "\n"), "Mint");
                         store.AddNote("A small idea\\nWrite things down\\nand hang them up like photos.".Replace("\\n", "\n"), "Lavender");
+                        if (args.Contains("--demo-picture-note"))
+                            store.SetNotePicture(store.AddNote("[ ] Print the map\\nFor the trip on Saturday.".Replace("\\n", "\n"), "Butter"), Demo("THE MAP", "A picture inside a note", "#746DA1"));
                     }
                     if (demo && args.Contains("--demo-remarks") && store.Items.Count > 0)
                     {
@@ -102,6 +104,13 @@ namespace Snapline
                     if (seconds != null) { quit.Interval = TimeSpan.FromSeconds(Double.Parse(seconds, System.Globalization.CultureInfo.InvariantCulture)); quit.Tick += delegate { quit.Stop(); shelf.Close(); }; quit.Start(); }
                     string snapshot = Option(args, "--snapshot");
                     string diagnostics = Option(args, "--diagnostics");
+                    string cardRects = Option(args, "--card-rects");
+                    if (cardRects != null)
+                    {
+                        var report = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                        report.Tick += delegate { try { shelf.WriteCardRects(cardRects); } catch (Exception ex) { store.Log("Card rects", ex); } };
+                        report.Start();
+                    }
                     shelf.Loaded += delegate
                     {
                         var delay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
