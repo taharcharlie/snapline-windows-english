@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -86,12 +85,12 @@ namespace Snapline
         readonly Point anchor;
         readonly double initialAngle;
         readonly Forms.Screen screen;
-        readonly Stopwatch watch = new Stopwatch();
         readonly MeshGeometry3D mesh = new MeshGeometry3D();
         readonly Viewport3D viewport = new Viewport3D();
         const int Columns = 16, Rows = 12;
-        double centerX, centerY, distance, lastFrame = -100;
+        double centerX, centerY, distance, lastFrame = -1, started = -1, shown = -1;
         bool rendering;
+        int steady;
         internal FallingPaper(Image image, Point center, double angle, Forms.Screen monitor)
         {
             Image = image; bitmap = (BitmapSource)image.Source; anchor = center;
@@ -121,8 +120,8 @@ namespace Snapline
                 Native.SetWindowLong(handle, -20, Native.GetWindowLong(handle, -20) | 0x08000000 | 0x80 | 0x20);
                 Native.SetWindowPos(handle, new IntPtr(-1), screen.WorkingArea.Left, screen.WorkingArea.Top, 1, 1, 0x0010);
             };
-            Loaded += delegate { Position(); Draw(0); watch.Start(); rendering = true; CompositionTarget.Rendering += Frame; };
-            Closed += delegate { if (rendering) CompositionTarget.Rendering -= Frame; rendering = false; watch.Stop(); viewport.Children.Clear(); Image.Source = null; };
+            Loaded += delegate { Position(); Draw(0); rendering = true; CompositionTarget.Rendering += Frame; };
+            Closed += delegate { if (rendering) CompositionTarget.Rendering -= Frame; rendering = false; viewport.Children.Clear(); Image.Source = null; };
         }
         void Position()
         {
@@ -142,9 +141,19 @@ namespace Snapline
         }
         void Frame(object sender, EventArgs args)
         {
-            double elapsed = watch.Elapsed.TotalMilliseconds;
-            if (elapsed - lastFrame < 1000.0 / 60 && elapsed < PaperFallMotion.Duration) return;
-            lastFrame = elapsed; Draw(elapsed / PaperFallMotion.Duration);
+            // The composition clock gives evenly spaced steps on any refresh rate; WPF may raise Rendering twice for one frame.
+            double time = ((RenderingEventArgs)args).RenderingTime.TotalMilliseconds;
+            bool skip = time == lastFrame;
+            if (started < 0 && !skip)
+            {
+                // Showing the surface and reflowing the shelf stall the first frames; hold the paper still until they come steadily.
+                if (shown < 0) shown = time;
+                steady = lastFrame >= 0 && time - lastFrame < 25 ? steady + 1 : 0;
+                if (steady >= 3 || time - shown > 200) started = time;
+                else { lastFrame = time; return; }
+            }
+            if (skip) return;
+            lastFrame = time; Draw((time - started) / PaperFallMotion.Duration);
             if (Progress >= 1) Close();
         }
         void Draw(double progress)

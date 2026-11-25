@@ -163,7 +163,7 @@ namespace Snapline
                         if (Object.ReferenceEquals(LastPaper, paper)) { LastPaper = null; LastFlying = null; LastFlight = null; }
                         releasePreview();
                     };
-                    keepUntil = DateTime.Now.AddMilliseconds(PaperFallMotion.Duration + 100); lastInside = DateTime.Now;
+                    keepUntil = DateTime.Now.AddMilliseconds(PaperFallMotion.Duration + 350); lastInside = DateTime.Now;
                     try { paper.Show(); animationRunning = true; } catch { paper.Close(); throw; }
                 }
                 catch (Exception ex) { store.Log("Play removal animation", ex); }
