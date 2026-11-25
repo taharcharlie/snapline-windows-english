@@ -185,7 +185,8 @@ namespace Snapline
     sealed partial class Shelf
     {
         internal RemarkEditor remarkEditor;
-        internal const double RemarkStripHeight = 30;
+        // The caption strip under a screenshot grows with the card size.
+        internal double RemarkStripHeight { get { return Math.Round(30 * CardScale); } }
         FrameworkElement RemarkStrip(Shot shot, double width, double imageHeight)
         {
             bool blank = String.IsNullOrWhiteSpace(shot.Remark);
@@ -260,8 +261,8 @@ namespace Snapline
                 marker = new Border { Width = lead, Height = 12, CornerRadius = Theme.Radius(1.5),
                     Background = MemoTheme.Brush(Theme.Accent), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             marker.IsHitTestVisible = false; content.Children.Add(marker);
-            var label = new RemarkText { Text = summary, FontSize = Theme.Size(12), FontFamily = Theme.Font, Foreground = MemoTheme.Brush(Theme.Text) };
-            label.MaxHeight = 20; label.ClipToBounds = true;
+            var label = new RemarkText { Text = summary, FontSize = Theme.Size(12 * CardScale), FontFamily = Theme.Font, Foreground = MemoTheme.Brush(Theme.Text) };
+            label.MaxHeight = Math.Round(20 * CardScale); label.ClipToBounds = true;
             label.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(label, 1); content.Children.Add(label); button.Content = content;
             AutomationProperties.SetName(button, blank ? "Add caption" : "Edit caption");
             button.ToolTip = blank ? "Note what this screenshot is for" : "Click to edit · Hover the image for the full text";

@@ -37,13 +37,14 @@ namespace Snapline
             var shortcut = ShortcutSpec.From(store.Settings);
             CaptureHotkeyRegistered = shortcut != null && Native.RegisterHotKey(handle, captureHotkeyId, shortcut.Modifiers | 0x4000u, shortcut.Key);
         }
-        void SelectCaptureShortcut(string shortcut)
+        internal void SelectCaptureShortcut(string shortcut)
         {
             string error;
             if (!TrySelectCaptureShortcut(shortcut, 0, 0, out error)) Notify(error);
         }
         void UpdateShortcutMenu()
         {
+            UpdateLineShortcutHints();
             if (captureMenu != null) captureMenu.Text = "Capture region (copy only)";
             foreach (var choice in shortcutChoices)
             {

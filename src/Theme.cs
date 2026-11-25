@@ -70,18 +70,30 @@ namespace Snapline
 
         // On battery, or when Windows animations are switched off, the cards hang still and removed cards do not fall.
         internal static bool ForceCalm, ForceLively;
-        static bool calm; static DateTime calmChecked;
-        internal static bool Calm
+        // The animation choice from Preferences (0 Basic, 1 Fun), and whether Fun stays Fun on battery.
+        // Windows' own animation setting is not consulted: the choice is the user's, in Snapline.
+        internal static int AnimationMode;
+        internal static bool FunOnBattery;
+        static bool battery; static DateTime batteryChecked;
+        internal static bool OnBattery
         {
             get
             {
-                if (ForceLively) return false; // The built-in tests time the falling animation.
-                if (ForceCalm) return true;
-                if ((DateTime.Now - calmChecked).TotalSeconds < 5) return calm;
-                calmChecked = DateTime.Now;
-                try { calm = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline || !SystemParameters.ClientAreaAnimation; }
-                catch { calm = false; }
-                return calm;
+                if ((DateTime.Now - batteryChecked).TotalSeconds < 5) return battery;
+                batteryChecked = DateTime.Now;
+                try { battery = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline; }
+                catch { battery = false; }
+                return battery;
+            }
+        }
+        // Fun: cards swing and removed cards fall. Basic, the default: they hang still and go at once.
+        internal static bool Fun
+        {
+            get
+            {
+                if (ForceLively) return true; // The built-in tests time the falling animation.
+                if (ForceCalm) return false;
+                return AnimationMode == 1 && (FunOnBattery || !OnBattery);
             }
         }
 

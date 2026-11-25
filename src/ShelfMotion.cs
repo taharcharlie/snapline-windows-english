@@ -153,7 +153,7 @@ namespace Snapline
                 }
                 catch (Exception ex) { store.Log("Prepare removal animation", ex); }
                 remove(); // Commit first; a failed save must leave the original card visible.
-                if (image == null || shuttingDown || !expanded || Theme.Calm) return;
+                if (image == null || shuttingDown || !expanded || !Theme.Fun) return;
                 try
                 {
                     var paper = new FallingPaper(image, center, angle, monitor) { Owner = this };

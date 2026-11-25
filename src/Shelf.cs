@@ -35,7 +35,9 @@ namespace Snapline
         readonly Canvas canvas = new Canvas();
         readonly TranslateTransform shelfSlide = new TranslateTransform();
         bool opening, collapsing, renderDeferred;
-        internal const double ShelfHeight = 270, HiddenShelfOffset = -350;
+        internal const double ShelfHeight = 270;
+        // Far enough above the screen to hide the whole open shelf, however large the notes are.
+        internal double HiddenShelfOffset { get { return -350 - CardDrop; } }
         // The stage is the clipped area below the bar; cards slide out from under its top edge.
         Grid stage;
         double lineTop;
@@ -69,7 +71,7 @@ namespace Snapline
         HwndSource source;
         Forms.Screen screen;
         bool expanded, pinned, dragging, dialogOpen, shuttingDown;
-        DateTime keepUntil, hideUntil, lastInside;
+        DateTime keepUntil, hideUntil, lastInside, indicatorSince;
         internal Func<IntPtr> ForegroundWindow = Native.GetForegroundWindow;
         internal Func<Native.Point?> PointerPosition = delegate { Native.Point point; return Native.GetCursorPos(out point) ? (Native.Point?)point : null; };
 
@@ -153,9 +155,7 @@ namespace Snapline
             Native.SetWindowLong(handle, -20, Native.GetWindowLong(handle, -20) | 0x08000000 | 0x00000080);
 
             ClipboardRegistered = false; // Only direct capture results are collected.
-            HotkeyRegistered = Native.RegisterHotKey(handle, 1, 0x4003, 0x53); // Ctrl+Alt+S, no repeat.
-            HangHotkeyRegistered = Native.RegisterHotKey(handle, 4, 0x4003, 0x44); // Ctrl+Alt+D, no repeat.
-            NoteHotkeyRegistered = Native.RegisterHotKey(handle, 5, 0x4003, 0x4E); // Ctrl+Alt+N, no repeat.
+            RegisterLineShortcuts(); // Ctrl + Alt + S, D and N unless changed in Preferences.
             RegisterCaptureShortcut();
             screen = ScreenUnderPointer();
             MakeTray();
@@ -190,9 +190,9 @@ namespace Snapline
             }
 
             if (store.Settings.CaptureShortcut != "None" && !CaptureHotkeyRegistered) StartupNotice(CaptureShortcutLabel + " is in use by another program. Use the scissors button or change the shortcut in the tray menu.");
-            if (!HotkeyRegistered) StartupNotice("Ctrl + Alt + S is in use by another program. Open the line from the top edge or the tray.");
-            else if (!HangHotkeyRegistered) StartupNotice("Ctrl + Alt + D is in use by another program. Hang the clipboard from the tray menu instead.");
-            else if (!NoteHotkeyRegistered) StartupNotice("Ctrl + Alt + N is in use by another program. Start a note from the tray menu instead.");
+            if (!HotkeyRegistered && !LineShortcut.Open.IsOff(store.Settings)) StartupNotice(LineShortcutLabel(LineShortcut.Open) + " is in use by another program. Open the line from the top edge or the tray.");
+            else if (!HangHotkeyRegistered && !LineShortcut.Hang.IsOff(store.Settings)) StartupNotice(LineShortcutLabel(LineShortcut.Hang) + " is in use by another program. Hang the clipboard from the tray menu instead.");
+            else if (!NoteHotkeyRegistered && !LineShortcut.Note.IsOff(store.Settings)) StartupNotice(LineShortcutLabel(LineShortcut.Note) + " is in use by another program. Start a note from the tray menu instead.");
         }
         void StartupNotice(string message)
         {
@@ -215,6 +215,7 @@ namespace Snapline
                     handled = true;
                 }
                 else if (w.ToInt32() >= 20 && w.ToInt32() <= 25) { if (lineKeys && expanded) LineKey(w.ToInt32()); handled = true; }
+                else if (w.ToInt32() == 26) { if (lineKeys && expanded) Undo(); handled = true; }
                 else if (w.ToInt32() >= 30 && w.ToInt32() <= 38) { if (lineKeys && expanded) LineDigit(w.ToInt32() - 29); handled = true; }
                 else if (w.ToInt32() == captureHotkeyId && CaptureHotkeyRegistered)
                 {
@@ -245,18 +246,18 @@ namespace Snapline
             var area = screen.WorkingArea;
             double scale = Dpi();
             lineTop = open ? BarBottom(area, scale) : 0;
-            int height = (int)Math.Ceiling((open ? ShelfHeight + SlackDrop + lineTop : 4) * scale);
+            int height = (int)Math.Ceiling((open ? OpenHeight + lineTop : 4) * scale);
             Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, height, 0x0010);
             // A monitor move can change the WPF presentation source's DPI.
             scale = Dpi();
-            int updated = (int)Math.Ceiling((open ? ShelfHeight + SlackDrop + lineTop : 4) * scale);
+            int updated = (int)Math.Ceiling((open ? OpenHeight + lineTop : 4) * scale);
             if (height != updated) Native.SetWindowPos(handle, new IntPtr(-1), area.Left, area.Top, area.Width, updated, 0x0010);
             shelfWidth = area.Width / scale;
             canvas.Width = shelfWidth;
-            canvas.Height = open ? ShelfHeight + SlackDrop : 4;
+            canvas.Height = open ? OpenHeight : 4;
             stage.Margin = new Thickness(0, lineTop, 0, 0);
             stage.Height = canvas.Height;
-            if (changed) { first = 0; focus = 0; }
+            if (changed) { StopGlide(); first = 0; focus = 0; view = this.target = 0; }
         }
         // Bottom edge of a komorebi bar docked at the top of this screen, in WPF units; 0 when there is none.
         double BarBottom(Drawing.Rectangle area, double scale)
@@ -278,6 +279,13 @@ namespace Snapline
         internal double Slack { get { int v = store.Settings.LineSlack; return (v <= 0 ? 100 : v) / 100.0; } }
         // Extra room below the cards when the rope hangs looser than normal.
         double SlackDrop { get { return Math.Max(0, Slack - 1) * 52; } }
+        // The card size preset: 1 for the original size.
+        internal double CardScale { get { return CardSizes.Scale(store.Settings); } }
+        // Extra room below the line for larger cards. The tallest card is a screenshot with its caption strip, 163 at the original size;
+        // the focused card is shown 5% larger.
+        double CardDrop { get { return Math.Ceiling((CardScale - 1) * 163 * 1.05); } }
+        // Height of the open shelf, below any bar. Collapsed, the window is always 4 tall.
+        double OpenHeight { get { return ShelfHeight + SlackDrop + CardDrop; } }
         double Lean(double degrees) { return degrees * (0.4 + 0.6 * Slack); }
         internal Drawing.Rectangle IndicatorHitBounds()
         {
@@ -297,11 +305,45 @@ namespace Snapline
             if (expanded || collapsing || shuttingDown || dialogOpen || dragging || helpReading || capturePending ||
                 FlyingCount > 0 || DateTime.Now < hideUntil) return;
             var point = PointerPosition();
-            if (!point.HasValue || !IndicatorHitBounds().Contains(point.Value.X, point.Value.Y)) return;
+            if (!point.HasValue || !IndicatorHitBounds().Contains(point.Value.X, point.Value.Y)) { indicatorSince = DateTime.MinValue; return; }
+            FastTick(); // The pointer is on the line: check often while it rests there.
             if (!demo && Fullscreen(ScreenUnderPointer())) return;
+            // With a wait set in Preferences, the pointer has to rest on the line that long; the tick keeps asking meanwhile.
+            int wait = Tuning.OpenDelay(store.Settings);
+            if (wait > 0)
+            {
+                if (indicatorSince == DateTime.MinValue) indicatorSince = DateTime.Now;
+                if ((DateTime.Now - indicatorSince).TotalMilliseconds < wait) return;
+            }
+            indicatorSince = DateTime.MinValue;
             Reveal();
         }
+        // The tick polls the pointer. It runs every 80 ms while the line is open, moving or importing, or while the pointer is near
+        // the top of the screen; otherwise every 400 ms, which is all the closed line needs. Opening never waits for it: the touch
+        // line reacts to the pointer by itself and the shortcuts arrive as messages.
+        const int FastTickMs = 80, IdleTickMs = 400;
+        void FastTick() { if (tick.Interval.TotalMilliseconds != FastTickMs) tick.Interval = TimeSpan.FromMilliseconds(FastTickMs); }
+        void PaceTick()
+        {
+            bool fast = expanded || opening || collapsing || dragging || reorderSlots != null || FlyingCount > 0 || pending.Count > 0;
+            if (!fast)
+            {
+                var point = PointerPosition();
+                if (point.HasValue)
+                {
+                    var area = Forms.Screen.FromPoint(new Drawing.Point(point.Value.X, point.Value.Y)).WorkingArea;
+                    fast = point.Value.Y < area.Top + 120 * Math.Max(1, Dpi());
+                }
+            }
+            int wanted = fast ? FastTickMs : IdleTickMs;
+            if ((int)tick.Interval.TotalMilliseconds != wanted) tick.Interval = TimeSpan.FromMilliseconds(wanted);
+        }
         void Tick(object sender, EventArgs e)
+        {
+            try { TickOnce(); }
+            finally { if (!shuttingDown) PaceTick(); }
+        }
+        void TickOnce()
         {
             if (shuttingDown) return;
             // The longest setting follows the bar's date and clock, whose width shifts through the day.
@@ -332,7 +374,8 @@ namespace Snapline
             Forms.Screen under = Forms.Screen.FromPoint(new Drawing.Point(p.X, p.Y));
             DateTime now = DateTime.Now;
             if (FlyingCount > 0) { lastInside = now; return; }
-            if (!demo && Fullscreen(under))
+            // Only an open line needs to give way here; the closed one checks when the pointer reaches the touch line.
+            if (!demo && expanded && Fullscreen(under))
             {
                 if (expanded && screen.DeviceName == under.DeviceName) Collapse(false, false);
                 return;
@@ -341,14 +384,35 @@ namespace Snapline
             if (collapsing) return;
             if (!expanded) TryRevealFromIndicator();
             bool inside = expanded && p.X >= screen.WorkingArea.Left && p.X < screen.WorkingArea.Right &&
-                p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + (266 + SlackDrop + lineTop) * Dpi();
+                p.Y >= screen.WorkingArea.Top && p.Y < screen.WorkingArea.Top + (266 + SlackDrop + CardDrop + lineTop) * Dpi();
             if (inside) lastInside = now;
             else if (lineKeys && (Native.GetAsyncKeyState(0x01) & 0x8000) != 0) SetLineKeys(false); // Clicked into another app.
-            if (expanded && !pinned && now > keepUntil && (now - lastInside).TotalMilliseconds > 700) Collapse(false);
+            if (expanded && !pinned && now > keepUntil && (now - lastInside).TotalMilliseconds > Tuning.CloseDelay(store.Settings)) Collapse(false);
             if (toast != "" && now > toastUntil) { toast = ""; UpdateToast(); }
+        }
+        // After the line has been open, the cards and previews it built are garbage once it closes. A few seconds later,
+        // with the line still closed and nothing being edited, one collection hands that memory back.
+        bool openedSinceCollect;
+        DispatcherTimer collectLater;
+        void CollectAfterClosing()
+        {
+            if (!openedSinceCollect) return;
+            if (collectLater == null)
+            {
+                collectLater = new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromSeconds(4) };
+                collectLater.Tick += delegate
+                {
+                    collectLater.Stop();
+                    if (expanded || opening || dialogOpen || memoEditor != null || remarkEditor != null || shuttingDown) return;
+                    openedSinceCollect = false;
+                    GC.Collect(); GC.WaitForPendingFinalizers();
+                };
+            }
+            collectLater.Stop(); collectLater.Start();
         }
         internal void Reveal()
         {
+            FastTick(); openedSinceCollect = true;
             bool was = expanded;
             bool reversing = collapsing;
             double offset = shelfSlide.Y;
@@ -385,6 +449,7 @@ namespace Snapline
                 if (serial != transitionSerial || shuttingDown) return;
                 collapsing = false; expanded = false;
                 Position(false, screen);
+                CollectAfterClosing();
                 shelfSlide.BeginAnimation(TranslateTransform.YProperty, null); shelfSlide.Y = 0;
                 Render();
             };
@@ -443,10 +508,11 @@ namespace Snapline
         }
         internal void Snapshot(string file)
         {
-            canvas.Measure(new System.Windows.Size(shelfWidth, 270));
-            canvas.Arrange(new System.Windows.Rect(0, 0, shelfWidth, 270));
+            double height = Math.Ceiling(ShelfHeight + CardDrop);
+            canvas.Measure(new System.Windows.Size(shelfWidth, height));
+            canvas.Arrange(new System.Windows.Rect(0, 0, shelfWidth, height));
             canvas.UpdateLayout();
-            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(shelfWidth), 270, 96, 96, PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(shelfWidth), (int)height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(canvas);
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using (var stream = System.IO.File.Create(file)) encoder.Save(stream);

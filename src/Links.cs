@@ -143,7 +143,7 @@ namespace Snapline
             var before = Links.ToList();
             Links.Insert(0, link);
             // Only cards leave the list here. The files they point at are never touched.
-            var overflow = Links.Where(x => !x.Kept).Skip(MaxLinks).ToList();
+            var overflow = Links.Where(x => !x.Kept).Skip(LinkLimit).ToList();
             foreach (var old in overflow) Links.Remove(old);
             try { SaveLinks(); } catch { Links.Clear(); Links.AddRange(before); throw; }
             if (Changed != null) Changed();
@@ -332,7 +332,7 @@ namespace Snapline
         }
         void MakeLinkCard(Link link, double center, double y, int index)
         {
-            const double width = 182, height = 124;
+            double size = CardScale, width = Math.Round(182 * size), height = Math.Round(124 * size);
             double lean = Lean(new[] { 1.8, -1.5, 1.0, -2.1 }[index % 4]);
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, Cursor = Cursors.Hand, RenderTransform = swing, Tag = link };
@@ -342,25 +342,25 @@ namespace Snapline
             grid.Children.Add(new Border { Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1),
                 Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), Opacity = 0.16, ShadowDepth = 4, BlurRadius = 9 } });
             grid.Children.Add(new Border { Height = 4, VerticalAlignment = VerticalAlignment.Top, Background = Brush(Theme.Text), IsHitTestVisible = false });
-            var body = new Grid { Margin = new Thickness(14, 14, 14, 10), IsHitTestVisible = false, Opacity = link.Missing ? 0.5 : 1 };
+            var body = new Grid { Margin = new Thickness(14 * size, 14 * size, 14 * size, 10 * size), IsHitTestVisible = false, Opacity = link.Missing ? 0.5 : 1 };
             body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var header = new Grid();
-            header.Children.Add(new TextBlock { Text = kind, FontSize = Theme.Size(12), Foreground = Brush(Theme.Mid) });
+            header.Children.Add(new TextBlock { Text = kind, FontSize = Theme.Size(12 * size), Foreground = Brush(Theme.Mid) });
             // The chain glyph marks every reference card: the thing itself lives somewhere else.
-            header.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13, Foreground = Brush(Theme.Dim), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center });
+            header.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13 * size, Foreground = Brush(Theme.Dim), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center });
             body.Children.Add(header);
-            var middle = new DockPanel { Margin = new Thickness(0, 8, 0, 4), LastChildFill = true };
+            var middle = new DockPanel { Margin = new Thickness(0, 8 * size, 0, 4 * size), LastChildFill = true };
             var icon = IconFor(link);
             FrameworkElement mark = icon != null
-                ? (FrameworkElement)new Image { Source = icon, Width = 30, Height = 30, VerticalAlignment = VerticalAlignment.Top }
-                : new TextBlock { Text = link.IsUrl ? "" : "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 26, Foreground = Brush(Theme.Light), VerticalAlignment = VerticalAlignment.Top };
-            mark.Margin = new Thickness(0, 2, 10, 0); DockPanel.SetDock(mark, Dock.Left); middle.Children.Add(mark);
-            middle.Children.Add(new TextBlock { Text = name, FontSize = Theme.Size(13), Foreground = Brush(Theme.Light), TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 19, MaxHeight = 40, VerticalAlignment = VerticalAlignment.Top });
+                ? (FrameworkElement)new Image { Source = icon, Width = Math.Round(30 * size), Height = Math.Round(30 * size), VerticalAlignment = VerticalAlignment.Top }
+                : new TextBlock { Text = link.IsUrl ? "" : "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 26 * size, Foreground = Brush(Theme.Light), VerticalAlignment = VerticalAlignment.Top };
+            mark.Margin = new Thickness(0, 2 * size, 10 * size, 0); DockPanel.SetDock(mark, Dock.Left); middle.Children.Add(mark);
+            middle.Children.Add(new TextBlock { Text = name, FontSize = Theme.Size(13 * size), Foreground = Brush(Theme.Light), TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = Math.Round(19 * size), MaxHeight = Math.Round(40 * size), VerticalAlignment = VerticalAlignment.Top });
             Grid.SetRow(middle, 1); body.Children.Add(middle);
-            var footer = new TextBlock { Text = link.Missing ? "Missing" : LinkPlace(link), FontSize = Theme.Size(11), Foreground = Brush(link.Missing ? Theme.Warn : Theme.Dim), TextTrimming = TextTrimming.CharacterEllipsis };
+            var footer = new TextBlock { Text = link.Missing ? "Missing" : LinkPlace(link), FontSize = Theme.Size(11 * size), Foreground = Brush(link.Missing ? Theme.Warn : Theme.Dim), TextTrimming = TextTrimming.CharacterEllipsis };
             Grid.SetRow(footer, 2); body.Children.Add(footer);
             grid.Children.Add(body);
             AddHangingPeg(grid);
@@ -473,7 +473,7 @@ namespace Snapline
         {
             bool existed; int before = store.Links.Count;
             var link = store.AddLink(target, kind, title, out existed);
-            if (!existed && store.Links.Count <= before) Notify("The oldest reference card was unhung to stay within " + Store.MaxLinks + ". Its original is untouched.");
+            if (!existed && store.Links.Count <= before) Notify("The oldest reference card was unhung to stay within " + store.LinkLimit + ". Its original is untouched.");
             if (hangBatch) return;
             int at = Deck().FindIndex(x => Object.ReferenceEquals(x, link));
             if (at >= 0) focus = at;

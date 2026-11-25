@@ -24,14 +24,22 @@ namespace Snapline
             if ((modifiers & 8) != 0) return "Win shortcuts belong to Windows. Use Ctrl, Shift or Alt.";
             if (modifiers == 0 || (modifiers & ~7u) != 0) return "Add Ctrl, Shift or Alt so normal typing is not affected.";
             if (key == 0x7B) return "F12 is reserved by the system. Choose another key.";
-            if (modifiers == 3 && key == 0x53) return "Ctrl + Alt + S already opens the line. Choose another.";
-            if (modifiers == 3 && key == 0x44) return "Ctrl + Alt + D already hangs the clipboard. Choose another.";
-            if (modifiers == 3 && key == 0x4E) return "Ctrl + Alt + N already starts a new note. Choose another.";
             if (modifiers == 1 && key == 0x73) return "Alt + F4 closes windows. Choose another.";
             bool supported = (key >= 0x41 && key <= 0x5A) || (key >= 0x30 && key <= 0x39) ||
                 (key >= 0x60 && key <= 0x6F) || (key >= 0x70 && key <= 0x87) || key == 0x2C ||
                 (key >= 0xBA && key <= 0xC0) || (key >= 0xDB && key <= 0xDF) || key == 0xE2;
             return supported ? null : "Choose a letter, digit, symbol, function key or PrtSc.";
+        }
+        internal bool SameKeys(ShortcutSpec other) { return other != null && other.Modifiers == Modifiers && other.Key == Key; }
+        // Another of Snapline's own shortcuts that already uses these keys, as a message; null when they are free.
+        // `except` is the line shortcut being changed (null when it is the capture shortcut, which is then not compared).
+        internal static string Conflict(Preferences settings, ShortcutSpec spec, LineShortcut except)
+        {
+            if (spec == null) return null;
+            if (except != null && spec.SameKeys(From(settings))) return spec.Label + " already captures a region. Choose another.";
+            foreach (var each in LineShortcut.All)
+                if (each != except && spec.SameKeys(each.Of(settings))) return spec.Label + " already " + each.Does + ". Choose another.";
+            return null;
         }
         internal static string ModifierLabel(uint modifiers)
         {
@@ -90,6 +98,45 @@ namespace Snapline
         }
     }
 
+    // The shortcuts that open the line, hang the clipboard and start a note. Each has its own hotkey id on the shelf window
+    // and can be the original keys, keys of your own, or off.
+    sealed class LineShortcut
+    {
+        internal readonly string Name, Does, Title;
+        internal readonly int Id;
+        readonly uint defaultKey;
+        readonly Func<Preferences, string> read;
+        readonly Action<Preferences, string> write;
+        LineShortcut(string name, string title, string does, int id, uint key, Func<Preferences, string> get, Action<Preferences, string> set)
+        { Name = name; Title = title; Does = does; Id = id; defaultKey = key; read = get; write = set; }
+        internal static readonly LineShortcut Open = new LineShortcut("Open", "Open the line", "opens the line", 1, 0x53, p => p.OpenShortcut, (p, v) => p.OpenShortcut = v);
+        internal static readonly LineShortcut Hang = new LineShortcut("Hang", "Hang the clipboard", "hangs the clipboard", 4, 0x44, p => p.HangShortcut, (p, v) => p.HangShortcut = v);
+        internal static readonly LineShortcut Note = new LineShortcut("Note", "Start a new note", "starts a new note", 5, 0x4E, p => p.NoteShortcut, (p, v) => p.NoteShortcut = v);
+        internal static readonly LineShortcut[] All = { Open, Hang, Note };
+        internal ShortcutSpec Default { get { return new ShortcutSpec(3, defaultKey); } }
+        internal string Raw(Preferences settings) { return read(settings) ?? ""; }
+        internal void Write(Preferences settings, string raw) { write(settings, raw); }
+        internal bool IsOff(Preferences settings) { return Raw(settings) == "off"; }
+        internal bool IsDefault(Preferences settings) { var spec = Of(settings); return spec != null && spec.SameKeys(Default); }
+        // The keys in use, or null when off. Anything unreadable or no longer allowed reads as the original keys.
+        internal ShortcutSpec Of(Preferences settings)
+        {
+            string raw = Raw(settings).Trim();
+            if (raw == "off") return null;
+            var parts = raw.Split(',');
+            uint modifiers, key;
+            if (parts.Length == 2 && UInt32.TryParse(parts[0], out modifiers) && UInt32.TryParse(parts[1], out key) && ShortcutSpec.Validate(modifiers, key) == null)
+                return new ShortcutSpec(modifiers, key);
+            return Default;
+        }
+        internal string Encode(ShortcutSpec spec)
+        {
+            if (spec == null) return "off";
+            return spec.SameKeys(Default) ? "" : spec.Modifiers + "," + spec.Key;
+        }
+        internal string Label(Preferences settings) { var spec = Of(settings); return spec == null ? "Off" : spec.Label; }
+    }
+
     sealed partial class Shelf
     {
         int captureHotkeyId = 2;
@@ -104,6 +151,11 @@ namespace Snapline
             if (mode != "CtrlB" && mode != "CtrlPrintScreen" && mode != "ShiftPrintScreen" && mode != "None" && mode != "Custom")
             { error = "Unknown shortcut option."; return false; }
             if (mode == "Custom" && (error = ShortcutSpec.Validate(modifiers, key)) != null) return false;
+            if (mode != "None")
+            {
+                var wanted = mode == "Custom" ? new ShortcutSpec(modifiers, key) : mode == "CtrlB" ? new ShortcutSpec(2, 0x42) : new ShortcutSpec(mode == "ShiftPrintScreen" ? 4u : 2u, 0x2C);
+                if ((error = ShortcutSpec.Conflict(store.Settings, wanted, null)) != null) return false;
+            }
             string oldMode = store.Settings.CaptureShortcut;
             uint oldModifiers = store.Settings.CustomCaptureModifiers, oldKey = store.Settings.CustomCaptureKey;
             var oldSpec = ShortcutSpec.From(store.Settings);
@@ -167,5 +219,84 @@ namespace Snapline
                 keepUntil = DateTime.Now.AddSeconds(3);
             }
         }
+
+        // ---- open, hang and note shortcuts ----
+
+        internal bool LineShortcutRegistered(LineShortcut which)
+        {
+            return which == LineShortcut.Open ? HotkeyRegistered : which == LineShortcut.Hang ? HangHotkeyRegistered : NoteHotkeyRegistered;
+        }
+        void SetLineShortcutRegistered(LineShortcut which, bool on)
+        {
+            if (which == LineShortcut.Open) HotkeyRegistered = on; else if (which == LineShortcut.Hang) HangHotkeyRegistered = on; else NoteHotkeyRegistered = on;
+        }
+        bool RegisterLineShortcut(LineShortcut which)
+        {
+            Native.UnregisterHotKey(handle, which.Id);
+            var spec = which.Of(store.Settings);
+            bool on = spec != null && Native.RegisterHotKey(handle, which.Id, spec.Modifiers | 0x4000u, spec.Key); // No repeat.
+            SetLineShortcutRegistered(which, on);
+            return on;
+        }
+        void RegisterLineShortcuts() { foreach (var each in LineShortcut.All) RegisterLineShortcut(each); }
+
+        // Sets one of the line shortcuts to new keys, or off with null. Keeps the old keys when the new ones are taken or cannot be saved.
+        internal bool TrySetLineShortcut(LineShortcut which, ShortcutSpec next, out string error)
+        {
+            error = null;
+            if (next != null && ((error = ShortcutSpec.Validate(next.Modifiers, next.Key)) != null || (error = ShortcutSpec.Conflict(store.Settings, next, which)) != null)) return false;
+            string oldRaw = which.Raw(store.Settings);
+            var old = which.Of(store.Settings);
+            bool same = next != null && next.SameKeys(old) && LineShortcutRegistered(which);
+            if (!same)
+            {
+                Native.UnregisterHotKey(handle, which.Id);
+                if (next != null && !Native.RegisterHotKey(handle, which.Id, next.Modifiers | 0x4000u, next.Key))
+                {
+                    RegisterLineShortcut(which); // The old keys again.
+                    error = next.Label + " could not be enabled; another program may be using it. Choose another.";
+                    return false;
+                }
+                SetLineShortcutRegistered(which, next != null);
+            }
+            which.Write(store.Settings, which.Encode(next));
+            try { store.SaveSettings(); }
+            catch (Exception ex)
+            {
+                which.Write(store.Settings, oldRaw); RegisterLineShortcut(which);
+                store.Log("Save " + which.Name + " shortcut", ex);
+                error = "Could not save the setting; the previous shortcut is kept. Try again."; return false;
+            }
+            UpdateShortcutMenu(); Render();
+            return true;
+        }
+        // Records new keys for one of the line shortcuts in the same dialog as the capture shortcut.
+        internal void EditLineShortcut(LineShortcut which)
+        {
+            if (dialogOpen || capturePending || shuttingDown) return;
+            dialogOpen = true; editingShortcut = true;
+            CloseImagePreview(); CloseNotePreview();
+            if (helpTip != null) helpTip.IsOpen = false;
+            // Let the current keys reach the recorder instead of doing what they do.
+            Native.UnregisterHotKey(handle, which.Id); SetLineShortcutRegistered(which, false);
+            try
+            {
+                var editor = new ShortcutEditor(which.Of(store.Settings) ?? which.Default, delegate(ShortcutSpec choice)
+                {
+                    string error;
+                    return TrySetLineShortcut(which, choice, out error) ? null : error;
+                }, which.Title);
+                editor.Owner = this;
+                editor.ShowDialog();
+            }
+            finally
+            {
+                editingShortcut = false; dialogOpen = false;
+                if (!LineShortcutRegistered(which)) RegisterLineShortcut(which);
+                UpdateShortcutMenu(); Render();
+                keepUntil = DateTime.Now.AddSeconds(3);
+            }
+        }
+        internal string LineShortcutLabel(LineShortcut which) { return which.Label(store.Settings); }
     }
 }

@@ -53,6 +53,7 @@ namespace Snapline
                 if (args.Contains("--startup-test")) return StartupTests.Run(root);
                 if (args.Contains("--remark-test")) return RemarkTests.Run(root);
                 if (args.Contains("--interaction-test")) return InteractionTests.Run(root);
+                if (args.Contains("--preferences-test")) return PreferencesTests.Run(root);
                 bool fresh;
                 using (var mutex = new Mutex(true, "Local\\Snapline-" + BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(root)))).Replace("-", "").Substring(0, 20), out fresh))
                 {
@@ -63,8 +64,10 @@ namespace Snapline
                     }
                     if (!fresh) { if (!args.Contains("--startup")) Native.PostMessage(new IntPtr(0xffff), Native.ShowMessage, IntPtr.Zero, IntPtr.Zero); return 0; }
                     var store = new Store(root);
+                    GC.Collect(); // Let go of what loading the line needed before the app settles in for the day.
                     Theme.Apply(Option(args, "--theme") ?? store.Settings.ThemeName);
                     Theme.ApplyFont(Option(args, "--font") ?? store.Settings.FontName);
+                    Theme.AnimationMode = Tuning.Animation(store.Settings); Theme.FunOnBattery = store.Settings.FunOnBattery;
                     var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
                     try { app.Resources.MergedDictionaries.Add(Theme.MenuResources()); }
                     catch (Exception ex) { store.Log("Menu style", ex); } // Plain menus still work.
@@ -74,7 +77,7 @@ namespace Snapline
                         e.Handled = true;
                     };
                     bool demo = args.Contains("--demo");
-                    Theme.ForceCalm = args.Contains("--calm"); // For testing the on-battery behaviour on mains.
+                    Theme.ForceCalm = args.Contains("--calm"); // Basic whatever the setting, for checking it.
                     if (demo && store.Items.Count == 0)
                     {
                         store.Add(Demo("IDEAS", "Hang up an idea", "#315B75"), "Sample · Ideas");

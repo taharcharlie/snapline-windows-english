@@ -17,6 +17,9 @@ namespace Snapline
             internal FrameworkElement Card;
             internal RotateTransform Swing;
             internal AnimationClock Clock;
+            internal double Rest;              // the card's lean, where it settles
+            internal object Key;               // its deck item (or the Tips card), so a redraw keeps its swing
+            internal TranslateTransform Fall;  // the drop of a newly hung card, in Fun
         }
         readonly List<FrameworkElement> hoverTargets = new List<FrameworkElement>();
         readonly List<HangingMotion> hangingMotions = new List<HangingMotion>();
@@ -106,15 +109,26 @@ namespace Snapline
         void RegisterHangingMotion(FrameworkElement card, RotateTransform swing, DoubleAnimation breeze)
         {
             card.CacheMode = new BitmapCache();
-            hangingMotions.Add(new HangingMotion { Card = card, Swing = swing });
+            var motion = new HangingMotion { Card = card, Swing = swing, Key = card.Tag ?? TipsKey,
+                Rest = breeze.From.HasValue && breeze.To.HasValue ? (breeze.From.Value + breeze.To.Value) / 2 : swing.Angle };
+            hangingMotions.Add(motion);
+            // Fun: a pendulum moves the card instead of an endless sway.
+            if (Theme.Fun) { AttachSwing(motion); return; }
             SetHangingAnimation(swing, breeze);
         }
         void SetHangingAnimation(RotateTransform swing, DoubleAnimation animation)
         {
             var motion = hangingMotions.Find(x => Object.ReferenceEquals(x.Swing, swing));
             if (motion == null) return;
-            // Calm mode: settle at the middle of the sway instead of swaying for ever.
-            if (Theme.Calm && animation.RepeatBehavior == RepeatBehavior.Forever && animation.From.HasValue && animation.To.HasValue)
+            if (Theme.Fun)
+            {
+                if (motion.Clock != null) { swing.ApplyAnimationClock(RotateTransform.AngleProperty, null); motion.Clock.Controller.Remove(); motion.Clock = null; }
+                // The endless sway means "settle at your lean"; anything else (the hover straighten) is where to settle now.
+                SwingToward(motion, animation.RepeatBehavior == RepeatBehavior.Forever || !animation.To.HasValue ? motion.Rest : animation.To.Value);
+                return;
+            }
+            // Basic: settle at the middle of the sway and hold still there, instead of swaying for ever.
+            if (!Theme.Fun && animation.RepeatBehavior == RepeatBehavior.Forever && animation.From.HasValue && animation.To.HasValue)
                 animation = new DoubleAnimation((animation.From.Value + animation.To.Value) / 2, TimeSpan.FromMilliseconds(180));
             var timeline = animation.Clone();
             if (!timeline.From.HasValue) timeline.From = swing.Angle;

@@ -86,13 +86,13 @@ namespace Snapline
                         move(visible.Left + visible.Width / 2, visible.Top); phase = 4; phaseStart = DateTime.Now;
                         var marker = ((System.Windows.Controls.Grid)shelf.Content).Children.OfType<System.Windows.Controls.Canvas>().First().Children.OfType<System.Windows.Controls.Border>().Single();
                         marker.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
-                        Require(shelf.Expanded && shelf.Opening && shelf.ShelfOffset <= Shelf.HiddenShelfOffset + 1,
+                        Require(shelf.Expanded && shelf.Opening && shelf.ShelfOffset <= shelf.HiddenShelfOffset + 1,
                             "Blue-line MouseEnter waited for polling or dwell instead of starting opening synchronously.");
                         report.Add("PASS: blue-line MouseEnter starts downward opening immediately in the same input event");
                     }
                     else if (phase == 4)
                     {
-                        if (shelf.Opening && shelf.ShelfOffset > Shelf.HiddenShelfOffset && shelf.ShelfOffset < -5) sawSlide = true;
+                        if (shelf.Opening && shelf.ShelfOffset > shelf.HiddenShelfOffset && shelf.ShelfOffset < -5) sawSlide = true;
                         if ((DateTime.Now - phaseStart).TotalMilliseconds <= 700) return;
                         Require(sawSlide && !shelf.Opening && Math.Abs(shelf.ShelfOffset) < .1, "Blue-line opening skipped the downward slide.");
                         Require(shelf.ActualHeight > 200, "Touching visible blue line failed."); Require(Native.GetForegroundWindow() == focus, "Hover stole focus.");
@@ -111,11 +111,18 @@ namespace Snapline
                         Native.Point at = owned;
                         Require(shelf.ActualHeight > 200, "Hover did not resume after fullscreen. Cursor=" + at.X + "," + at.Y + " Line=" + shelf.IndicatorHitBounds() + " Height=" + shelf.ActualHeight);
                         report.Add("PASS: fullscreen suppresses accidental opening; returning to desktop resumes line hover");
+                        // Larger notes need a taller shelf: choosing a size while the line is open resizes the window at once.
+                        IntPtr window = new WindowInteropHelper(shelf).Handle; Native.Rect small, large;
+                        Native.GetWindowRect(window, out small); shelf.ChooseCardSize(2); Native.GetWindowRect(window, out large);
+                        int grown = (large.Bottom - large.Top) - (small.Bottom - small.Top);
+                        Require(grown >= 80 && grown <= 3 * 81 + 2 && large.Right - large.Left == small.Right - small.Left && large.Top == small.Top,
+                            "Large cards did not make the open shelf taller. Grew by " + grown);
+                        report.Add("PASS: the Large card size makes the open shelf taller at once, keeping it full width and at the top");
                         move(area.Left + area.Width / 2, area.Bottom - 80); phase = 7; phaseStart = DateTime.Now;
                     }
                     else if (phase == 7 && (DateTime.Now - phaseStart).TotalMilliseconds > 4100)
                     {
-                        Require(shelf.ActualHeight <= 8, "Leaving did not auto-collapse."); report.Add("PASS: automatic collapse after leaving remains intact");
+                        Require(shelf.ActualHeight <= 8, "Leaving did not auto-collapse."); report.Add("PASS: automatic collapse after leaving remains intact, with Large notes too");
                         exit = 0; timer.Stop(); shelf.Close();
                     }
                 }

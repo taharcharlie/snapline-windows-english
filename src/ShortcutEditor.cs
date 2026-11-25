@@ -14,12 +14,14 @@ namespace Snapline
         readonly TextBlock status;
         readonly Button save;
         readonly Func<ShortcutSpec, string> apply;
+        // What the shortcut does, for the heading; null for the capture shortcut.
+        readonly string purpose;
         ShortcutSpec candidate;
         internal ShortcutSpec Candidate { get { return candidate; } }
-        internal ShortcutEditor(ShortcutSpec current, Func<ShortcutSpec, string> saveChoice)
+        internal ShortcutEditor(ShortcutSpec current, Func<ShortcutSpec, string> saveChoice, string what = null)
         {
-            apply = saveChoice; candidate = current;
-            Title = "Custom shortcut · Snapline";
+            apply = saveChoice; candidate = current; purpose = what;
+            Title = (what ?? "Custom shortcut") + " · Snapline";
             Width = 484; Height = 382; ResizeMode = ResizeMode.NoResize;
             ShowInTaskbar = false; WindowStyle = WindowStyle.None;
             AllowsTransparency = true; Background = Brushes.Transparent; Topmost = true;
@@ -40,7 +42,7 @@ namespace Snapline
             var header = new Grid { Margin = new Thickness(0, 0, 0, 17) };
             var heading = new StackPanel();
             heading.Children.Add(MemoTheme.Text("SNAPLINE  /  SHORTCUT", 10, Theme.Mid));
-            var title = MemoTheme.Text("Custom shortcut", 23, Theme.Light); title.Margin = new Thickness(0, 6, 0, 0); heading.Children.Add(title);
+            var title = MemoTheme.Text(what ?? "Custom shortcut", 23, Theme.Light); title.Margin = new Thickness(0, 6, 0, 0); heading.Children.Add(title);
             heading.MouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e) { if (e.ClickCount == 1) DragMove(); };
             header.Children.Add(heading);
             var close = MemoTheme.Button("×", "Cancel shortcut setup");
@@ -56,7 +58,7 @@ namespace Snapline
                 Height = 68, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(9),
                 Foreground = MemoTheme.Brush(Theme.Text), Cursor = Cursors.Hand, IsReadOnlyCaretVisible = false };
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "ShortcutInput");
-            System.Windows.Automation.AutomationProperties.SetName(input, "Press the capture shortcut");
+            System.Windows.Automation.AutomationProperties.SetName(input, what == null ? "Press the capture shortcut" : "Press the shortcut for: " + what);
             input.PreviewKeyDown += RecordKey;
             input.GotKeyboardFocus += delegate { input.Select(0, 0); };
             var keyPanel = new Border { Child = input, CornerRadius = Theme.Radius(10),
@@ -112,8 +114,16 @@ namespace Snapline
         void UpdateCandidate()
         {
             save.IsEnabled = candidate != null;
-            status.Text = candidate == null ? "Checked for conflicts when saved; kept across restarts." : candidate.Warning;
+            status.Text = candidate == null ? "Checked for conflicts when saved; kept across restarts." : Advice(candidate);
             status.Foreground = MemoTheme.Brush(candidate != null && candidate.Warning.StartsWith("This shortcut") ? Theme.Warn : Theme.Mid);
+        }
+        // The capture shortcut's advice, worded for the other shortcuts when one of those is being recorded.
+        string Advice(ShortcutSpec spec)
+        {
+            string warning = spec.Warning;
+            if (purpose == null) return warning;
+            return warning.StartsWith("Only captures", StringComparison.Ordinal) ? "Kept across restarts. While Snapline runs, these keys reach it rather than other apps."
+                : warning.Replace("capture takes priority", "Snapline takes priority");
         }
         internal void SaveChoice()
         {

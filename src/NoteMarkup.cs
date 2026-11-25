@@ -70,6 +70,10 @@ namespace Snapline
         internal static void Fill(TextBlock block, string text, string accent, Action<int> toggle)
         {
             block.Inlines.Clear();
+            // A calculation note (first line "math", "sum" or "avg") is drawn as written, with its results; no marks or boxes,
+            // so that 2*3*4 stays arithmetic rather than becoming italics.
+            var calculation = NoteMath.Evaluate(text);
+            if (calculation.Mode != NoteMath.Mode.None) { FillCalculation(block, text, accent, calculation); return; }
             string[] lines = (text ?? "").Replace("\r\n", "\n").Split('\n');
             for (int i = 0; i < lines.Length; i++)
             {
@@ -82,6 +86,20 @@ namespace Snapline
                 Styled(words.Inlines, rest, 0);
                 if (state == 2) { words.Foreground = MemoTheme.Brush(Theme.Mid); words.TextDecorations = TextDecorations.Strikethrough; }
                 block.Inlines.Add(words);
+            }
+        }
+        static void FillCalculation(TextBlock block, string text, string accent, NoteMath.Outcome calculation)
+        {
+            string[] lines = (text ?? "").Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) block.Inlines.Add(new LineBreak());
+                var words = new Run(lines[i]);
+                if (i == 0) words.Foreground = MemoTheme.Brush(Theme.Mid);
+                block.Inlines.Add(words);
+                // The total sits on the keyword line, so even a small card that cuts off its last lines shows it.
+                if (i == 0 && calculation.Total != null) block.Inlines.Add(new Run("   " + calculation.Total) { Foreground = MemoTheme.Brush(accent), FontWeight = FontWeights.SemiBold });
+                if (calculation.Lines[i] != null) block.Inlines.Add(new Run("  = " + calculation.Lines[i]) { Foreground = MemoTheme.Brush(accent) });
             }
         }
         static void Styled(InlineCollection target, string text, int depth)

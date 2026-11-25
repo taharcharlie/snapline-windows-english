@@ -147,7 +147,10 @@ namespace Snapline
         readonly Store store;
         readonly Memo memo;
         readonly TextBox input;
-        readonly TextBlock status, placeholder;
+        readonly TextBlock status, placeholder, total;
+        // A calculation note's results, each at the end of its line, drawn over the text.
+        readonly Canvas results = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
+        bool resultsPending;
         readonly Border paper;
         readonly StackPanel pictureRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
         readonly DispatcherTimer saveDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(480) };
@@ -157,7 +160,12 @@ namespace Snapline
         internal MemoEditor(Store data, Memo note)
         {
             store = data; memo = note; color = note.Color;
-            Title = "Edit note · Snapline"; Width = 524; Height = 462;
+            // The card size preset makes the editor and its writing larger too, as far as the screen allows.
+            double scale = CardSizes.Scale(store.Settings);
+            Title = "Edit note · Snapline";
+            Width = Math.Max(524, Math.Min(Math.Round(524 * scale), SystemParameters.WorkArea.Width - 40));
+            Height = Math.Max(462, Math.Min(Math.Round(462 * scale), SystemParameters.WorkArea.Height - 40));
+            double lineHeight = Math.Round(25 * scale);
             ShowInTaskbar = false; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true; Background = Brushes.Transparent;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -223,19 +231,30 @@ namespace Snapline
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 15) };
             writing.Children.Add(new Border { Background = MemoTheme.Brush(Theme.Alpha("16", Theme.White)), CornerRadius = Theme.Radius(6) });
             var rules = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
-            for (int i = 0; i < 14; i++) rules.Children.Add(new Line { X1 = 11, X2 = 445, Y1 = 34 + 25 * i, Y2 = 34 + 25 * i, Stroke = MemoTheme.Brush(Theme.Alpha("18", Theme.Text)), StrokeThickness = 0.5 });
+            // One rule under each line of writing: the text starts 10 below the top of the box.
+            for (int i = 0; i < 14; i++) rules.Children.Add(new Line { X1 = 11, X2 = Width - 79, Y1 = 9 + lineHeight * (i + 1), Y2 = 9 + lineHeight * (i + 1), Stroke = MemoTheme.Brush(Theme.Alpha("18", Theme.Text)), StrokeThickness = 0.5 });
             writing.Children.Add(rules);
             input = new TextBox { Text = note.Text, MaxLength = Store.MaxNoteText, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(11, 10, 10, 10),
-                FontSize = Theme.Size(15), Foreground = MemoTheme.Brush(Theme.Light), CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color)) };
-            TextBlock.SetLineHeight(input, 25);
+                FontSize = Theme.Size(15 * scale), Foreground = MemoTheme.Brush(Theme.Light), CaretBrush = MemoTheme.Brush(MemoTheme.Accent(color)) };
+            TextBlock.SetLineHeight(input, lineHeight);
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "NoteText");
             System.Windows.Automation.AutomationProperties.SetName(input, "Note text");
             writing.Children.Add(input);
-            placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…", FontSize = Theme.Size(15), LineHeight = 25,
+            placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…", FontSize = Theme.Size(15 * scale), LineHeight = lineHeight,
                 Foreground = MemoTheme.Brush(Theme.Mid), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             writing.Children.Add(placeholder);
+            writing.Children.Add(results);
+            total = new TextBlock { FontSize = Theme.Size(13 * scale), FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 16, 8), IsHitTestVisible = false };
+            writing.Children.Add(total);
+            input.TextChanged += delegate { ScheduleResults(); };
+            Loaded += delegate { ScheduleResults(); }; // The note's own results, as soon as it opens.
+            input.SizeChanged += delegate { ScheduleResults(); };
+            input.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(delegate { ScheduleResults(); }));
+            // In a calculation note, "=" at the end of a line fills in its result; on any other line it is just "=".
+            input.PreviewTextInput += delegate(object sender, TextCompositionEventArgs e) { if (e.Text == "=" && Complete()) e.Handled = true; };
             input.TextChanged += delegate { placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; MarkDirty(); };
             Grid.SetRow(writing, 3); content.Children.Add(writing);
             var footer = new Grid();
@@ -261,10 +280,59 @@ namespace Snapline
                     if (format != null) { e.Handled = true; format(); return; }
                 }
                 if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && input.IsKeyboardFocused && ContinueTodo()) { e.Handled = true; return; }
+                if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None && input.IsKeyboardFocused && Complete()) { e.Handled = true; return; }
                 if (e.Key == Key.Escape || (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) != 0)) { e.Handled = true; Close(); }
             };
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (!FlushChanges()) e.Cancel = true; };
             Closed += delegate { saveDelay.Stop(); };
+        }
+        void ScheduleResults()
+        {
+            if (resultsPending) return;
+            resultsPending = true;
+            // After layout, so the character positions are those of the text as it now wraps.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(delegate { resultsPending = false; UpdateResults(); }));
+        }
+        internal void UpdateResults()
+        {
+            results.Children.Clear(); total.Text = "";
+            var outcome = NoteMath.Evaluate(input.Text);
+            if (outcome.Mode == NoteMath.Mode.None) return;
+            var brush = MemoTheme.Brush(MemoTheme.Accent(color));
+            total.Foreground = brush; total.Text = outcome.Total ?? "";
+            string[] lines = input.Text.Split('\n');
+            int offset = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                int length = lines[i].TrimEnd('\r').Length;
+                if (outcome.Lines[i] != null && length > 0)
+                {
+                    var end = input.GetRectFromCharacterIndex(offset + length - 1, true);
+                    if (!end.IsEmpty && end.Bottom > 0 && end.Top < input.ActualHeight)
+                    {
+                        var shown = new TextBlock { Text = "= " + outcome.Lines[i], FontSize = input.FontSize, FontFamily = input.FontFamily, Foreground = brush, Opacity = 0.85 };
+                        shown.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+                        Canvas.SetLeft(shown, Math.Max(end.Right + 12, input.ActualWidth - 20 - shown.DesiredSize.Width)); Canvas.SetTop(shown, end.Top);
+                        results.Children.Add(shown);
+                    }
+                }
+                offset += lines[i].Length + 1;
+            }
+        }
+        // At the end of a line of a calculation note: writes " = result" there. False when there is nothing to fill in.
+        internal bool Complete()
+        {
+            if (input.SelectionLength > 0) return false;
+            string text = input.Text; int caret = input.CaretIndex;
+            if (caret < text.Length && text[caret] != '\r' && text[caret] != '\n') return false;
+            int lineIndex = 0; for (int i = 0; i < caret; i++) if (text[i] == '\n') lineIndex++;
+            string value = NoteMath.CompleteLine(text, lineIndex);
+            if (value == null) return false;
+            bool spaced = caret > 0 && text[caret - 1] == ' ';
+            string insert = (spaced ? "" : " ") + "= " + value;
+            if (text.Length + insert.Length > Store.MaxNoteText) return false;
+            input.SelectedText = insert; input.Select(caret + insert.Length, 0);
+            return true;
         }
         // Puts the mark around the selection, or takes it off when the selection already has it.
         internal void Wrap(string mark)
@@ -398,7 +466,7 @@ namespace Snapline
         // For --editor-snapshot: a picture of the editor, to check a theme without opening it by hand.
         internal void Snapshot(string file)
         {
-            UpdateLayout();
+            UpdateLayout(); UpdateResults(); UpdateLayout();
             var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(this);
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
@@ -443,7 +511,9 @@ namespace Snapline
         }
         void CopyNote(Memo note)
         {
-            try { SetClipboard(new DataObject(DataFormats.UnicodeText, NoteMarkup.Plain(note.Text))); Flash(note, note.Picture != null ? "Text copied" : "Copied"); }
+            // A calculation note copies with its results filled in; others without their bold, italic and underline marks.
+            string copied = NoteMath.ModeOf(note.Text) != NoteMath.Mode.None ? NoteMath.WithResults(note.Text) : NoteMarkup.Plain(note.Text);
+            try { SetClipboard(new DataObject(DataFormats.UnicodeText, copied)); Flash(note, note.Picture != null ? "Text copied" : "Copied"); }
             catch (Exception ex) { store.Log("Copy memo", ex); Notify("Copy failed. Try again shortly."); }
         }
         void DeleteNote(Memo note)
@@ -458,18 +528,19 @@ namespace Snapline
         }
         ToolTip NotePopup(Memo note, FrameworkElement target)
         {
-            double maxHeight = Math.Max(90, Math.Min(440, screen.WorkingArea.Height / Dpi() - 315));
-            double width = Math.Max(200, Math.Min(360, screen.WorkingArea.Width / Dpi() - 60));
+            double scale = CardScale;
+            double maxHeight = Math.Max(90, Math.Min(440 * scale, screen.WorkingArea.Height / Dpi() - 315 - CardDrop));
+            double width = Math.Max(200, Math.Min(360 * scale, screen.WorkingArea.Width / Dpi() - 60));
             var content = new StackPanel { Width = width };
-            var title = MemoTheme.Text("Note", 13, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
-            var picture = new Image { MaxHeight = 230, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
+            var title = MemoTheme.Text("Note", 13 * scale, MemoTheme.Accent(note.Color)); title.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(title);
+            var picture = new Image { MaxHeight = 230 * scale, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
             content.Children.Add(picture);
-            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14, Theme.Light);
-            text.TextWrapping = TextWrapping.Wrap; text.LineHeight = 23;
+            var text = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Empty. Double-click to write something." : note.Text, 14 * scale, Theme.Light);
+            text.TextWrapping = TextWrapping.Wrap; text.LineHeight = Math.Round(23 * scale);
             if (!String.IsNullOrWhiteSpace(note.Text)) NoteMarkup.Fill(text, note.Text, MemoTheme.Accent(note.Color), null);
             var scroll = new ScrollViewer { Content = text, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             content.Children.Add(scroll);
-            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to edit", FontSize = Theme.Size(11), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
+            content.Children.Add(new TextBlock { Text = "Click to copy · Double-click to edit", FontSize = Theme.Size(11 * scale), Foreground = MemoTheme.Brush(Theme.Text), Margin = new Thickness(0, 13, 0, 0) });
             var tip = new ToolTip { Content = new Border { Child = content, Padding = new Thickness(18), CornerRadius = Theme.Radius(9), Background = MemoTheme.Paper(note.Color),
                     BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1) },
                 Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HasDropShadow = true,
@@ -487,14 +558,17 @@ namespace Snapline
                     {
                         if (File.Exists(file))
                         {
-                            picture.Source = Store.Load(file); picture.Visibility = Visibility.Visible;
+                            // At the size it is shown, not full resolution, and released again when the preview closes.
+                            var thumb = store.NoteThumb(note);
+                            double aspect = thumb == null ? 1.5 : thumb.PixelWidth / (double)Math.Max(1, thumb.PixelHeight), dpi = Math.Max(1, Dpi());
+                            picture.Source = Store.Preview(file, (int)Math.Ceiling(width * dpi), (int)Math.Ceiling(230 * scale * dpi), aspect); picture.Visibility = Visibility.Visible;
                             if (String.IsNullOrWhiteSpace(note.Text)) scroll.Visibility = Visibility.Collapsed;
                         }
                     }
                     catch (Exception ex) { store.Log("Show note picture", ex); }
                 }
             };
-            tip.Closed += delegate { if (Object.ReferenceEquals(noteTip, tip)) noteTip = null; lastInside = DateTime.Now; };
+            tip.Closed += delegate { picture.Source = null; if (Object.ReferenceEquals(noteTip, tip)) noteTip = null; lastInside = DateTime.Now; };
             return tip;
         }
         // The picture of a note on its own, large. Shown while the pointer is on the picture part of a card that also has text.
@@ -502,7 +576,7 @@ namespace Snapline
         {
             double dpi = Dpi();
             double maxWidth = Math.Max(100, Math.Min(760, screen.WorkingArea.Width / dpi - 64));
-            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300));
+            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300 - CardDrop));
             double aspect = thumb.PixelWidth / (double)Math.Max(1, thumb.PixelHeight);
             double width = Math.Min(maxWidth, maxHeight * aspect), height = width / aspect;
             var preview = new Image { Width = width, Height = height, Stretch = Stretch.Uniform };
@@ -534,7 +608,8 @@ namespace Snapline
         }
         void MakeNoteCard(Memo note, double center, double y, int index)
         {
-            const double width = 182, height = 153;
+            // The card size preset scales the card, its text and its spacing together.
+            double scale = CardScale, width = CardSizes.NoteWidth(scale), height = CardSizes.NoteHeight(scale);
             double lean = Lean(new[] { -2.4, 1.6, -1.1, 2.2 }[index % 4]);
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, Cursor = Cursors.Hand, RenderTransform = swing, Tag = note };
@@ -543,16 +618,16 @@ namespace Snapline
             grid.Children.Add(new Border { Background = MemoTheme.Paper(note.Color), BorderBrush = MemoTheme.Brush(MemoTheme.Edge(note.Color)), BorderThickness = new Thickness(1), CornerRadius = Theme.Radius(3),
                 Effect = new DropShadowEffect { Color = MemoTheme.Hex(Theme.Shadow), Opacity = 0.16, ShadowDepth = 4, BlurRadius = 9 } });
             grid.Children.Add(new Border { Height = 4, VerticalAlignment = VerticalAlignment.Top, Background = MemoTheme.Brush(MemoTheme.Accent(note.Color)), IsHitTestVisible = false });
-            var details = new Grid { Margin = new Thickness(14, 14, 14, 11), IsHitTestVisible = false };
+            var details = new Grid { Margin = new Thickness(14 * scale, 14 * scale, 14 * scale, 11 * scale), IsHitTestVisible = false };
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             details.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             details.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var header = new Grid(); header.Children.Add(MemoTheme.Text("Note", 12, Theme.Mid));
-            var date = MemoTheme.Text(note.Created.ToString("MMM d"), 12, Theme.Dim); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
+            var header = new Grid(); header.Children.Add(MemoTheme.Text("Note", 12 * scale, Theme.Mid));
+            var date = MemoTheme.Text(note.Created.ToString("MMM d"), 12 * scale, Theme.Dim); date.HorizontalAlignment = HorizontalAlignment.Right; header.Children.Add(date);
             details.Children.Add(header);
-            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 15, Theme.Light);
-            body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = 22;
-            body.Margin = new Thickness(0, 9, 0, 5); body.ClipToBounds = true;
+            var body = MemoTheme.Text(String.IsNullOrWhiteSpace(note.Text) ? "Double-click to write…" : note.Text, 15 * scale, Theme.Light);
+            body.TextWrapping = TextWrapping.Wrap; body.TextTrimming = TextTrimming.CharacterEllipsis; body.LineHeight = Math.Round(22 * scale);
+            body.Margin = new Thickness(0, 9 * scale, 0, 5 * scale); body.ClipToBounds = true;
             if (!String.IsNullOrWhiteSpace(note.Text))
             {
                 NoteMarkup.Fill(body, note.Text, MemoTheme.Accent(note.Color), delegate(int line)
@@ -568,25 +643,25 @@ namespace Snapline
             else
             {
                 bool wordless = String.IsNullOrWhiteSpace(note.Text);
-                var middle = new DockPanel { Margin = new Thickness(0, 8, 0, 4), LastChildFill = true };
-                var frame = new Border { Height = wordless ? 88 : 50, ClipToBounds = true, Tag = "NotePicture", Background = MemoTheme.Brush(Theme.Inset),
+                var middle = new DockPanel { Margin = new Thickness(0, 8 * scale, 0, 4 * scale), LastChildFill = true };
+                var frame = new Border { Height = Math.Round((wordless ? 88 : 50) * scale), ClipToBounds = true, Tag = "NotePicture", Background = MemoTheme.Brush(Theme.Inset),
                     Child = new Image { Source = thumb, Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
                 DockPanel.SetDock(frame, Dock.Top); middle.Children.Add(frame);
                 if (wordless) body.Visibility = Visibility.Collapsed;
                 else
                 {
-                    body.Margin = new Thickness(0, 5, 0, 0);
+                    body.Margin = new Thickness(0, 5 * scale, 0, 0);
                     // With the pointer on the picture, the preview shows the picture alone; on the rest of the card it shows the whole note.
                     // The picture has to take the pointer for that. Clicks on it still travel up to the card.
                     details.IsHitTestVisible = true;
                     frame.ToolTip = NotePicturePopup(note, grid, thumb);
-                    ToolTipService.SetInitialShowDelay(frame, 280); ToolTipService.SetBetweenShowDelay(frame, 100); ToolTipService.SetShowDuration(frame, 60000);
+                    ToolTipService.SetInitialShowDelay(frame, Tuning.PreviewDelay(store.Settings, 280)); ToolTipService.SetBetweenShowDelay(frame, 100); ToolTipService.SetShowDuration(frame, 60000);
                     RegisterHoverPreview(frame);
                 }
                 middle.Children.Add(body);
                 Grid.SetRow(middle, 1); details.Children.Add(middle);
             }
-            var footer = MemoTheme.Text("Double-click to edit", 11, Theme.Dim); Grid.SetRow(footer, 2); details.Children.Add(footer);
+            var footer = MemoTheme.Text("Double-click to edit", 11 * scale, Theme.Dim); Grid.SetRow(footer, 2); details.Children.Add(footer);
             grid.Children.Add(details);
             AddHangingPeg(grid);
             var remove = MemoTheme.Button("×", "Delete note"); remove.Width = 21; remove.Height = 21; remove.FontSize = Theme.Size(16); remove.Padding = new Thickness(0); remove.Background = MemoTheme.Brush(Theme.Alpha("DD", Theme.Panel));
@@ -602,7 +677,7 @@ namespace Snapline
             menu.Items.Add(Item(note.Kept ? "Stop keeping" : "Keep on the line", delegate { ToggleKeep(note); }));
             menu.Items.Add(new Separator()); menu.Items.Add(Item("Delete note", delegate { DeleteNote(note); }));
             menu.Opened += delegate { CloseNotePreview(); dialogOpen = true; }; menu.Closed += delegate { dialogOpen = false; lastInside = DateTime.Now; }; grid.ContextMenu = menu;
-            grid.ToolTip = NotePopup(note, grid); ToolTipService.SetInitialShowDelay(grid, 280); ToolTipService.SetBetweenShowDelay(grid, 100); ToolTipService.SetShowDuration(grid, 60000);
+            grid.ToolTip = NotePopup(note, grid); ToolTipService.SetInitialShowDelay(grid, Tuning.PreviewDelay(store.Settings, 280)); ToolTipService.SetBetweenShowDelay(grid, 100); ToolTipService.SetShowDuration(grid, 60000);
             RegisterHoverPreview(grid);
             var breeze = new DoubleAnimation(lean - 0.45, lean + 0.45, TimeSpan.FromSeconds(4.4 + index * 0.2)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } };
             Timeline.SetDesiredFrameRate(breeze, 24); RegisterHangingMotion(grid, swing, breeze);
@@ -689,6 +764,49 @@ namespace Snapline
             Check(editor.FlushChanges() && new Store(root).Notes.Any(x => x.Id == draft.Id && x.Text == box.Text), "Formatted text is saved as typed");
             editor.Close(); store.RemoveNote(draft);
             report.Add("PASS: editor bold/italic/underline wrap and unwrap; to-do, tick and list continuation");
+            Check(store.Settings.CardSize == 0 && CardSizes.NoteWidth(CardSizes.Scale(store.Settings)) == 182 && CardSizes.NoteHeight(CardSizes.Scale(store.Settings)) == 153, "Notes start at the original size");
+            store.Settings.CardSize = 2; store.SaveSettings();
+            Check(new Store(root).Settings.CardSize == 2 && CardSizes.NoteWidth(CardSizes.Scale(2)) == 273 && CardSizes.NoteHeight(CardSizes.Scale(2)) == 230, "Card size persists across restart");
+            Check(File.ReadAllText(System.IO.Path.Combine(root, "settings.json")).Contains("\"NoteSize\":2"), "Card size is saved under its first name, NoteSize");
+            var large = new MemoEditor(store, store.Notes[0]);
+            Check(large.Input.FontSize == Theme.Size(15 * 1.5) && TextBlock.GetLineHeight(large.Input) == 38, "Large notes write larger in the editor");
+            large.Close();
+            store.Settings.CardSize = 9; store.SaveSettings();
+            Check(new Store(root).Settings.CardSize == 0, "Unknown card size reads as the original");
+            store.Settings.CardSize = 0; store.SaveSettings();
+            var maths = new[]
+            {
+                new[] { "12*(3+4)", "84" }, new[] { "2^10", "1024" }, new[] { "2^3^2", "512" }, new[] { "-3^2", "-9" }, new[] { "15% of 80", "12" }, new[] { "50%", "0.5" },
+                new[] { "sqrt(2)", "1.414214" }, new[] { "max(1,234)", "234" }, new[] { "1,234 + 1", "1235" }, new[] { "1/0", null }, new[] { "hello there", null }, new[] { "42", null },
+                new[] { "12*(3+4) = 84", null }, new[] { "round(2.567, 2)", "2.57" }, new[] { "(1)*(2)*(3)", "6" },
+                new[] { "5 km in miles", "3.106856 miles" }, new[] { "72 f to c", "22.222222 c" }, new[] { "100 °C in °F", "212 °F" }, new[] { "0 c in k", "273.15 k" },
+                new[] { "3 cups in ml", "709.764709 ml" }, new[] { "1.5 GB in MB", "1500 MB" }, new[] { "90 min in h", "1.5 h" }, new[] { "5 in in cm", "12.7 cm" },
+                new[] { "2 fl oz to ml", "59.147059 ml" }, new[] { "60 mph in km/h", "96.56064 km/h" }, new[] { "5 kg in m", null }, new[] { "1 GiB in MB", "1073.741824 MB" },
+            };
+            foreach (var pair in maths)
+            {
+                var got = NoteMath.Evaluate("math\n" + pair[0]).Lines[1];
+                Check(got == pair[1], "math: " + pair[0] + " gave " + (got ?? "nothing") + ", expected " + (pair[1] ?? "nothing"));
+            }
+            var withVariables = NoteMath.Evaluate("Math\nx = 5\nx*3\ny = x + 1\ny^2");
+            Check(withVariables.Lines[1] == null && withVariables.Lines[2] == "15" && withVariables.Lines[3] == "6" && withVariables.Lines[4] == "36", "Variables carry to later lines");
+            var sum = NoteMath.Evaluate("sum\ncoffee 4.50\nlunch 12\njust words\nbus 2,50\npaid Nov 25\ntaxi - 3\nrefund -1\nrent 1,234.50");
+            Check(sum.Total == "Sum: 1253", "sum: " + sum.Total); // 4.5 + 12 + 3 - 1 + 1234.5; "2,50" and "Nov 25" do not count
+            Check(NoteMath.Evaluate("avg\n4.5\n12").Total == "Average: 8.25" && NoteMath.Evaluate("avg\nnothing").Total == "Average: none", "avg");
+            Check(NoteMath.ModeOf("mathematics\n1+1") == NoteMath.Mode.None && NoteMath.Evaluate("notes\n5 km in miles\n2+2").Lines.All(x => x == null), "Ordinary notes are never calculated");
+            Check(NoteMath.WithResults("math\n2+2\nx = 3\n1+1 = 2") == "math\r\n2+2 = 4\r\nx = 3\r\n1+1 = 2" && NoteMath.WithResults("sum\na 1\nb 2") == "sum\r\na 1\r\nb 2\r\nSum: 3", "Copied with results");
+            Check(NoteMath.CompleteLine("math\nx = 4\nx", 2) == null && NoteMath.CompleteLine("math\nx = 4\nx*2", 2) == "8", "A bare name is not completed; an expression is");
+            var calcDraft = store.AddNote("math\r\n12*(3+4)", "Butter");
+            var calcEditor = new MemoEditor(store, calcDraft); var calcBox = calcEditor.Input;
+            calcBox.Select(calcBox.Text.Length, 0);
+            Check(calcEditor.Complete() && calcBox.Text == "math\r\n12*(3+4) = 84" && calcBox.SelectionStart == calcBox.Text.Length, "Typing = at the end of a line fills in its result");
+            Check(!calcEditor.Complete(), "A line already answered is left alone");
+            calcBox.Select(4, 0); Check(!calcEditor.Complete(), "The keyword line is not completed");
+            calcEditor.FlushChanges(); calcEditor.Close(); store.RemoveNote(calcDraft);
+            var drawnCalc = new TextBlock(); NoteMarkup.Fill(drawnCalc, "sum\na 1\nb 2", Theme.Accent, null);
+            Check(drawnCalc.Inlines.OfType<System.Windows.Documents.Run>().Skip(1).First().Text.Trim() == "Sum: 3", "The card shows the total on the keyword line");
+            report.Add("PASS: math, sum, avg and unit conversions in notes; variables; ambiguous commas and dates skipped; ordinary notes untouched; = autocomplete; copy and card show results");
+            report.Add("PASS: card size choice persists (saved as NoteSize), unknown sizes fall back to the original, the note editor follows it");
             File.WriteAllLines(System.IO.Path.Combine(root, "memo-results.txt"), report, Encoding.UTF8);
             return 0;
         }

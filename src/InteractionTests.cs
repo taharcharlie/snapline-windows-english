@@ -403,12 +403,12 @@ namespace Snapline
                     {
                         Check(!shelf.Collapsing && !shelf.Expanded && shelf.ActualHeight <= 8 && shelf.ShelfOffset == 0, "Collapse did not restore blue-line window.");
                         shelf.Reveal(); motionAt = DateTime.UtcNow; phase = 16;
-                        Check(shelf.Opening && shelf.ShelfOffset <= Shelf.HiddenShelfOffset + 1 && ((Grid)shelf.Content).Children.OfType<Canvas>().First().Opacity == 1,
+                        Check(shelf.Opening && shelf.ShelfOffset <= shelf.HiddenShelfOffset + 1 && ((Grid)shelf.Content).Children.OfType<Canvas>().First().Opacity == 1,
                             "Opening did not start fully above screen at full opacity.");
                     }
                     else if (phase == 16)
                     {
-                        Check(shelf.Opening && shelf.ShelfOffset > Shelf.HiddenShelfOffset && shelf.ShelfOffset < -5 && shelf.ActualHeight > 200,
+                        Check(shelf.Opening && shelf.ShelfOffset > shelf.HiddenShelfOffset && shelf.ShelfOffset < -5 && shelf.ActualHeight > 200,
                             "Shelf flashed into place instead of descending through intermediate positions.");
                         Snapshot((FrameworkElement)shelf.Content, Path.Combine(root, "shelf-opening-preview.png")); phase = 160;
                     }

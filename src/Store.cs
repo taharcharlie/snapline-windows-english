@@ -38,6 +38,9 @@ namespace Snapline
         // Position on the line (higher is further left) and whether the card is protected from clearing.
         [DataMember] public double Rank;
         [DataMember] public bool Kept;
+        // The cached file's length and last write (UTC ticks) when Digest was worked out. While it still matches,
+        // start-up and refreshes skip decoding and hashing the full image.
+        [DataMember] public string Stamp;
         internal BitmapSource Thumb;
     }
 
@@ -63,6 +66,57 @@ namespace Snapline
         [DataMember] public string ThemeName;
         // One of Theme.Fonts; empty or unknown reads as Barlow Condensed.
         [DataMember] public string FontName;
+        // Size of every card on the line, and of the note preview and editor: an index into CardSizes; 0 (and anything unknown) is the original size.
+        // Saved as NoteSize, the setting's first name, so a choice made then is kept.
+        [DataMember(Name = "NoteSize")] public int CardSize;
+        // Timings and limits from Preferences. 0 (and so a settings file from before they existed) means the original value; see Tuning.
+        [DataMember] public int PreviewDelay;   // milliseconds before a hover preview opens
+        [DataMember] public int CloseDelay;     // milliseconds the line stays open after the pointer leaves it
+        [DataMember] public int UndoTime;       // seconds the Undo notice shows
+        [DataMember] public int OpenDelay;      // milliseconds the pointer rests on the touch line before it opens
+        [DataMember] public int Motion;         // the old card sway setting (0 automatic, 1 always, 2 never), read once to migrate
+        [DataMember] public int Animation;      // 0 Basic: light, cards hang still; 1 Fun: cards swing like clothes on a line
+        [DataMember] public bool FunOnBattery;  // false (the default): on battery, Fun behaves as Basic
+        [DataMember] public int AnimationRevision;
+        [DataMember] public int TipsCard;       // 0 Full (the original), 1 Compact: a slim tab with the same help, buttons and bin
+        [DataMember] public int ShotLimit;      // screenshots held, kept ones not counted
+        [DataMember] public int LinkLimit;      // reference cards held, kept ones not counted
+        // Keys that open the line, hang the clipboard and start a note: empty for the original (Ctrl + Alt + S, D, N),
+        // "off", or the modifiers and virtual key as "3,83". See LineShortcut.
+        [DataMember] public string OpenShortcut;
+        [DataMember] public string HangShortcut;
+        [DataMember] public string NoteShortcut;
+    }
+
+    // The timings and limits in Preferences, with their ranges. A value of 0 reads as the original behaviour.
+    static class Tuning
+    {
+        internal const int DefaultCloseDelay = 700, DefaultUndoTime = 7, DefaultLimit = 60;
+        internal static readonly string[] AnimationNames = { "Basic", "Fun" };
+        static int Clamp(int value, int min, int max) { return Math.Max(min, Math.Min(max, value)); }
+        // Each kind of preview has its own original delay (notes 280 ms, screenshots 300, Tips 220); a chosen delay applies to all of them.
+        internal static int PreviewDelay(Preferences p, int original) { return p.PreviewDelay > 0 ? Clamp(p.PreviewDelay, 100, 1500) : original; }
+        internal static int CloseDelay(Preferences p) { return p.CloseDelay > 0 ? Clamp(p.CloseDelay, 300, 5000) : DefaultCloseDelay; }
+        internal static int UndoTime(Preferences p) { return p.UndoTime > 0 ? Clamp(p.UndoTime, 3, 30) : DefaultUndoTime; }
+        internal static int OpenDelay(Preferences p) { return Clamp(p.OpenDelay, 0, 1000); }
+        internal static int Animation(Preferences p) { return p.Animation == 1 ? 1 : 0; }
+        internal static int ShotLimit(Preferences p) { return p.ShotLimit > 0 ? Clamp(p.ShotLimit, 10, 200) : DefaultLimit; }
+        internal static int LinkLimit(Preferences p) { return p.LinkLimit > 0 ? Clamp(p.LinkLimit, 10, 200) : DefaultLimit; }
+    }
+
+    // Card size presets. Each one scales every card on the line (notes, screenshots, references and Tips), with their text,
+    // and the note preview and editor, by the same factor.
+    static class CardSizes
+    {
+        internal static readonly string[] Names = { "Small", "Medium", "Large" };
+        internal static readonly string[] Hints = { "the original size", "a quarter larger", "half as large again" };
+        static readonly double[] Scales = { 1.0, 1.25, 1.5 };
+        internal static int Normalize(int index) { return index >= 0 && index < Scales.Length ? index : 0; }
+        internal static double Scale(int index) { return Scales[Normalize(index)]; }
+        internal static double Scale(Preferences settings) { return settings == null ? 1 : Scale(settings.CardSize); }
+        // A note card's size on the line, in whole units: with layout rounding a fractional size clips the peg above the card.
+        internal static double NoteWidth(double scale) { return Math.Round(182 * scale); }
+        internal static double NoteHeight(double scale) { return Math.Round(153 * scale); }
     }
 
     sealed partial class Store
@@ -79,6 +133,14 @@ namespace Snapline
             Directory.CreateDirectory(Inbox);
             Settings = Read<Preferences>(Path.Combine(Root, "settings.json")) ?? new Preferences();
             if (Settings.Folders == null) Settings.Folders = new List<string>();
+            Settings.CardSize = CardSizes.Normalize(Settings.CardSize);
+            // Once: the old sway setting becomes the animation choice. Always swaying was Fun even on battery; Auto and Never are Basic.
+            if (Settings.AnimationRevision < 1)
+            {
+                Settings.Animation = Settings.Motion == 1 ? 1 : 0;
+                Settings.FunOnBattery = Settings.Motion == 1;
+                Settings.AnimationRevision = 1;
+            }
             Settings.ClipboardImages = false; Settings.ScreenshotFolder = false; // Legacy settings cannot enable other sources.
             // Apply the new default once. Afterwards, preserve explicit alternate choices.
             if (Settings.CaptureShortcutRevision < 1)
@@ -94,25 +156,51 @@ namespace Snapline
             SweepNotePictures(null); // Pictures left behind by notes deleted in an earlier run.
             RestoreLinks();
             var saved = Read<List<Shot>>(Path.Combine(Root, "items.json")) ?? new List<Shot>();
-            int loose = 0;
+            int loose = 0; bool stamped = false;
             foreach (var shot in saved)
             {
                 // The limit counts only cards that are not kept, the same rule Add() applies.
-                if (shot == null || (!shot.Kept && ++loose > MaxItems)) continue;
+                if (shot == null || (!shot.Kept && ++loose > ShotLimit)) continue;
                 try
                 {
                     if (IsSafe(shot.File) && System.IO.File.Exists(FullPath(shot)))
                     {
-                        // Recompute after an external editor changes the cached file.
-                        var image = Load(FullPath(shot));
-                        shot.Digest = Hash(image);
-                        shot.Thumb = Thumbnail(image);
+                        string file = FullPath(shot), stamp = StampOf(file);
+                        if (shot.Digest != null && shot.Stamp == stamp) shot.Thumb = QuickThumbnail(file);
+                        else
+                        {
+                            // New to stamps, or changed by an external editor: decode and hash it once.
+                            var image = Load(file);
+                            shot.Digest = Hash(image);
+                            shot.Thumb = Thumbnail(image);
+                            shot.Stamp = stamp; stamped = true;
+                        }
                         shot.Remark = shot.Remark ?? "";
                         Items.Add(shot);
                     }
                 }
                 catch (Exception ex) { Log("Restore image", ex); }
             }
+            if (stamped) { try { Save(); } catch (Exception ex) { Log("Save image stamps", ex); } }
+        }
+        internal static string StampOf(string file)
+        {
+            var info = new FileInfo(file);
+            return info.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        // A thumbnail decoded straight at thumbnail size, after reading only the image's header for its size.
+        static BitmapSource QuickThumbnail(string file)
+        {
+            int width, height;
+            if (new FileInfo(file).Length > 64L * 1024 * 1024) throw new InvalidOperationException("The image is larger than 64 MB.");
+            using (var stream = System.IO.File.Open(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                var frame = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+                CheckSize(frame); width = frame.PixelWidth; height = frame.PixelHeight;
+            }
+            double scale = Math.Min(1, 480.0 / Math.Max(width, height));
+            if (scale >= 1) return Thumbnail(Load(file)); // Already small: the ordinary path costs nothing extra.
+            return Preview(file, Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)), width / (double)height);
         }
         static T Read<T>(string file) where T : class
         {
@@ -195,7 +283,8 @@ namespace Snapline
         }
         internal static BitmapSource Thumbnail(BitmapSource image)
         {
-            double scale = Math.Min(1, 360.0 / Math.Max(image.PixelWidth, image.PixelHeight));
+            // Large enough for the Large card size at 150% display scaling.
+            double scale = Math.Min(1, 480.0 / Math.Max(image.PixelWidth, image.PixelHeight));
             var small = new TransformedBitmap(image, new ScaleTransform(scale, scale));
             var converted = new FormatConvertedBitmap(small, PixelFormats.Bgra32, null, 0);
             int stride = converted.PixelWidth * 4;
@@ -215,11 +304,11 @@ namespace Snapline
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(image));
             using (var stream = System.IO.File.Create(full)) encoder.Save(stream);
-            var shot = new Shot { File = filename, Digest = hash, Label = label, Created = DateTime.Now, Thumb = Thumbnail(image), Rank = NextRank() };
+            var shot = new Shot { File = filename, Digest = hash, Label = label, Created = DateTime.Now, Thumb = Thumbnail(image), Rank = NextRank(), Stamp = StampOf(full) };
             Items.Insert(0, shot);
             // Commit first; do not delete an older cache image until the new list is durable.
             // Kept cards do not count towards the limit and are never cleared by it.
-            var overflow = Items.Where(x => !x.Kept).Skip(MaxItems).ToList();
+            var overflow = Items.Where(x => !x.Kept).Skip(ShotLimit).ToList();
             Items = Items.Where(x => !overflow.Contains(x)).ToList();
             Save();
             foreach (var old in overflow) DeleteCache(old);
@@ -227,6 +316,35 @@ namespace Snapline
             return shot;
         }
         internal Shot Import(string file) { return Add(Load(file), Path.GetFileName(file)); }
+        // How many screenshots and reference cards are held, set in Preferences; MaxItems and MaxLinks are the originals.
+        internal int ShotLimit { get { return Tuning.ShotLimit(Settings); } }
+        internal int LinkLimit { get { return Tuning.LinkLimit(Settings); } }
+        // The unkept cards past these limits, newest first.
+        internal int OverLimit(int shotLimit, int linkLimit)
+        {
+            return Math.Max(0, Items.Count(x => !x.Kept) - shotLimit) + Math.Max(0, Links.Count(x => !x.Kept) - linkLimit);
+        }
+        // After a limit is lowered: takes the oldest unkept cards past it off the line now, as hanging one more would.
+        // Screenshot copies go; the files behind reference cards are never touched.
+        internal void ApplyLimits()
+        {
+            var shots = Items.Where(x => !x.Kept).Skip(ShotLimit).ToList();
+            if (shots.Count > 0)
+            {
+                var before = Items;
+                Items = Items.Where(x => !shots.Contains(x)).ToList();
+                try { Save(); } catch { Items = before; throw; }
+                foreach (var old in shots) DeleteCache(old);
+            }
+            var links = Links.Where(x => !x.Kept).Skip(LinkLimit).ToList();
+            if (links.Count > 0)
+            {
+                var before = Links.ToList();
+                foreach (var old in links) Links.Remove(old);
+                try { SaveLinks(); } catch { Links.Clear(); Links.AddRange(before); throw; }
+            }
+            if ((shots.Count > 0 || links.Count > 0) && Changed != null) Changed();
+        }
         void DeleteCache(Shot item)
         {
             try { if (IsSafe(item.File)) System.IO.File.Delete(FullPath(item)); }
@@ -307,9 +425,13 @@ namespace Snapline
             if (!Items.Contains(item)) return;
             string file = FullPath(item);
             if (!System.IO.File.Exists(file)) { Remove(item); return; }
+            // Snapline's own writes also wake the folder watcher; an unchanged file needs nothing.
+            string stamp = StampOf(file);
+            if (item.Stamp == stamp && item.Digest != null && item.Thumb != null) return;
             var image = Load(file);
             item.Digest = Hash(image);
             item.Thumb = Thumbnail(image);
+            item.Stamp = stamp;
             Save();
             if (Changed != null) Changed();
         }

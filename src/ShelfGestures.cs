@@ -67,10 +67,18 @@ namespace Snapline
                 // Only the latest removal can be undone; the one before it becomes permanent now that this one succeeded.
                 if (previous != null) store.Discard(previous);
                 undoItem = item; undoIndex = index; pegGuardUntil = DateTime.Now.AddMilliseconds(450);
-                undoUntil = DateTime.Now.AddSeconds(7); keepUntil = undoUntil; lastInside = DateTime.Now;
+                undoUntil = DateTime.Now.AddSeconds(Tuning.UndoTime(store.Settings)); keepUntil = undoUntil; lastInside = DateTime.Now;
                 toast = ""; UpdateToast();
             }
             catch (Exception ex) { store.Log("Remove card", ex); Notify("Could not remove. The card is kept; try again shortly."); }
+        }
+        // What Undo would bring back, for the tray menu: the kind of card and a few words of it.
+        internal string UndoDescription()
+        {
+            var shot = undoItem as Shot; var memo = undoItem as Memo; var link = undoItem as Link;
+            string words = memo != null ? "note: " + (memo.Text ?? "").Split('\n')[0].Trim() : link != null ? "reference: " + LinkName(link) : shot != null ? "screenshot" : "";
+            if (memo != null && String.IsNullOrWhiteSpace(memo.Text)) words = memo.Picture != null ? "note with a picture" : "empty note";
+            return words.Length > 40 ? words.Substring(0, 39) + "…" : words;
         }
         internal void Undo()
         {
@@ -142,6 +150,8 @@ namespace Snapline
         }
 
         // ---- click, reorder, pull off ----
+        // Opens a held screenshot in Paint; the tests replace it so that nothing is launched.
+        internal Action<Shot> PaintLauncher;
         List<LineCard> reorderSlots;
         List<object> reorderDeck;
         bool binDrop;
@@ -155,19 +165,49 @@ namespace Snapline
             // into it does not first replace what is on the clipboard.
             var clickDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(System.Windows.Forms.SystemInformation.DoubleClickTime + 20) };
             clickDelay.Tick += delegate { clickDelay.Stop(); if (memo != null && store.Notes.Contains(memo) && !dialogOpen && !dragging) { if (onPicture && memo.Picture != null) CopyNotePicture(memo); else Activate(item); } };
-            var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(550) };
-            hold.Tick += delegate { hold.Stop(); if (down && !reorder && shot != null) { held = true; down = false; card.ReleaseMouseCapture(); Edit(shot); } };
+            // Every press gets an answer at once: the card sinks a little toward the finger and rises again on release.
+            Action<bool> sink = delegate(bool on)
+            {
+                var entry = lineCards.FirstOrDefault(x => Object.ReferenceEquals(x.Element, card));
+                if (entry == null || entry.Press == null) return;
+                var time = TimeSpan.FromMilliseconds(on ? 70 : 150);
+                double resting = entry.Index == focus ? 1.05 : 1, size = on ? resting * 0.975 : resting;
+                entry.Press.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(on ? 2.5 : 0, time));
+                entry.Scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(size, time));
+                entry.Scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(size, time));
+            };
+            // Holding a screenshot opens it in Paint. From 0.3 s a bar fills along its top and names what the hold will do,
+            // so the hold is seen and can be let go before it fires.
+            Grid holdMark = null;
+            Action endHold = delegate { if (holdMark != null) { ((Panel)card).Children.Remove(holdMark); holdMark = null; } };
+            Action beginHold = delegate
+            {
+                endHold();
+                if (shot == null) return;
+                var bar = new Border { Height = 3, Width = 0, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Background = Brush(Theme.Accent) };
+                var label = new Border { Background = Brush(Theme.Alpha("D9", Theme.Bg)), Padding = new Thickness(10, 5, 10, 5), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0,
+                    Child = new TextBlock { Text = "Keep holding: Edit in Paint", FontSize = Theme.Size(12), Foreground = Brush(Theme.Accent) } };
+                holdMark = new Grid { IsHitTestVisible = false, Tag = "HoldMark" };
+                holdMark.Children.Add(label); holdMark.Children.Add(bar);
+                ((Panel)card).Children.Add(holdMark);
+                var wait = TimeSpan.FromMilliseconds(300);
+                bar.BeginAnimation(FrameworkElement.WidthProperty, new DoubleAnimation(0, card.Width, TimeSpan.FromMilliseconds(500)) { BeginTime = wait });
+                label.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = wait });
+            };
+            var hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            hold.Tick += delegate { hold.Stop(); endHold(); if (down && !reorder && shot != null) { held = true; down = false; sink(false); card.ReleaseMouseCapture(); if (PaintLauncher != null) PaintLauncher(shot); else Edit(shot); } };
             card.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
             {
                 e.Handled = true; CloseImagePreview(); CloseNotePreview();
                 if (e.ClickCount == 2)
                 {
-                    hold.Stop(); clickDelay.Stop(); down = false; card.ReleaseMouseCapture();
+                    hold.Stop(); endHold(); clickDelay.Stop(); down = false; card.ReleaseMouseCapture();
                     OpenItem(item);
                     return;
                 }
                 start = e.GetPosition(canvas); grabX = start.X - Canvas.GetLeft(card);
                 down = true; held = reorder = false; card.CaptureMouse(); hold.Start();
+                sink(true); beginHold();
             };
             card.MouseMove += delegate(object sender, MouseEventArgs e)
             {
@@ -176,7 +216,7 @@ namespace Snapline
                 if (!reorder)
                 {
                     if (Math.Abs(dx) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(dy) < SystemParameters.MinimumVerticalDragDistance) return;
-                    hold.Stop();
+                    hold.Stop(); endHold(); sink(false);
                     // Downwards pulls the card off the rope; sideways slides it along.
                     if (dy > Math.Abs(dx)) { down = false; card.ReleaseMouseCapture(); Unclip(card, item); return; }
                     if (!BeginReorder(card)) { down = false; card.ReleaseMouseCapture(); return; }
@@ -194,7 +234,7 @@ namespace Snapline
             };
             card.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e)
             {
-                hold.Stop(); bool wasDown = down, wasReorder = reorder; down = reorder = false; card.ReleaseMouseCapture(); e.Handled = true;
+                hold.Stop(); endHold(); sink(false); bool wasDown = down, wasReorder = reorder; down = reorder = false; card.ReleaseMouseCapture(); e.Handled = true;
                 if (wasReorder) { EndReorder(card, true); return; }
                 if (!wasDown || held) return;
                 if (memo == null) { Activate(item); return; }
@@ -204,7 +244,7 @@ namespace Snapline
                 onPicture = picture != null && at.X >= 0 && at.Y >= 0 && at.X <= picture.ActualWidth && at.Y <= picture.ActualHeight;
                 clickDelay.Stop(); clickDelay.Start();
             };
-            card.LostMouseCapture += delegate { hold.Stop(); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
+            card.LostMouseCapture += delegate { hold.Stop(); endHold(); if (down) sink(false); bool wasReorder = reorder; reorder = false; down = false; if (wasReorder) EndReorder(card, true); };
         }
         static FrameworkElement Tagged(DependencyObject root, string tag)
         {
@@ -220,11 +260,13 @@ namespace Snapline
         bool BeginReorder(FrameworkElement card)
         {
             // Not while a redraw is waiting (caption editor open, line closing): the cards on screen may be out of date.
-            if (remarkEditor != null || collapsing || renderDeferred) return false;
+            // Nor while the line glides: the cards are moving and the next redraw is due.
+            if (remarkEditor != null || collapsing || renderDeferred || gliding) return false;
             reorderSlots = lineCards.OrderBy(x => x.Index).ToList();
             reorderDeck = Deck();
             rollingUntil = DateTime.MaxValue; // No focus changes from cards sliding under the pointer.
             Panel.SetZIndex(card, 50);
+            WakeSwing(); // In Fun the dragged card trails the pointer and swings.
             double left = Canvas.GetLeft(card), top = Canvas.GetTop(card);
             card.BeginAnimation(Canvas.LeftProperty, null); card.BeginAnimation(Canvas.TopProperty, null);
             Canvas.SetLeft(card, left); Canvas.SetTop(card, top);
@@ -318,12 +360,18 @@ namespace Snapline
             if (binFace != null) binFace.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         }
         // While a card is off the rope, the Tips card turns into the bin.
+        // For the tests: show the bin as a drag would, and the bin itself.
+        internal void ShowBinForTest(bool on) { if (binFace != null) binFace.Visibility = on ? Visibility.Visible : Visibility.Collapsed; }
+        internal FrameworkElement BinForTest { get { return binFace; } }
         void AddBin(Grid helpCard)
         {
             var label = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            label.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 30, Foreground = Brush(Theme.Warn), HorizontalAlignment = HorizontalAlignment.Center });
-            label.Children.Add(new TextBlock { Text = "Drop here to delete", FontSize = Theme.Size(13), Foreground = Brush(Theme.Light), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 0) });
+            label.Children.Add(new TextBlock { Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 30 * CardScale, Foreground = Brush(Theme.Warn), HorizontalAlignment = HorizontalAlignment.Center });
+            label.Children.Add(new TextBlock { Text = "Drop here to delete", FontSize = Theme.Size(13 * CardScale), Foreground = Brush(Theme.Light), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10 * CardScale, 0, 0) });
             binFace = new Border { Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1), Child = label, Visibility = Visibility.Collapsed, Tag = "Bin" };
+            // A compact Tips card shows the bin at full size, reaching out to its left, so the drop target is as large as ever.
+            double full = Math.Round(172 * CardScale);
+            if (helpCard.Width < full) binFace.Margin = new Thickness(-(full - helpCard.Width), 0, 0, 0);
             helpCard.Children.Add(binFace);
             helpCard.AllowDrop = true;
             DragEventHandler over = delegate(object sender, DragEventArgs e)

@@ -42,11 +42,11 @@ namespace Snapline
             AddHelpRow(content, "Scissors button", "Copies only, does not hang");
             AddHelpRow(content, "Touch the top line", "Opens the line");
             AddHelpRow(content, "Slip under an image", "Add or edit its caption");
-            AddHelpRow(content, "Ctrl + Alt + S", "Pin open / close");
+            if (!LineShortcut.Open.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Open), "Pin open / close");
             AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
-            AddHelpRow(content, "1 to 9", "After Ctrl + Alt + S: copy that card");
-            AddHelpRow(content, "Ctrl + Alt + D", "Hang what is on the clipboard");
-            AddHelpRow(content, "Ctrl + Alt + N", "Start a new note");
+            AddHelpRow(content, "1 to 9", LineShortcut.Open.IsOff(store.Settings) ? "After pinning open: copy that card" : "After " + LineShortcutLabel(LineShortcut.Open) + ": copy that card");
+            if (!LineShortcut.Hang.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Hang), "Hang what is on the clipboard");
+            if (!LineShortcut.Note.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Note), "Start a new note");
             AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
             AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
             AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
@@ -56,7 +56,7 @@ namespace Snapline
             AddHelpRow(content, "Pull a card down", "Drop it in an app, or on this card to delete");
             AddHelpRow(content, "Click a peg", "Delete; Undo shows for a few seconds");
             AddHelpRow(content, "Right-click → Keep", "Yellow peg: never cleared or deleted");
-            AddHelpRow(content, "Long-press an image", "Edit in Paint");
+            AddHelpRow(content, "Hold an image", "Edit in Paint (a bar fills first)");
             AddHelpRow(content, "Right-click an image", "Save as, remove and more");
             var footer = Text("Only shortcut captures are collected; customise in the tray", 10, Theme.Mid);
             footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
@@ -121,45 +121,124 @@ namespace Snapline
         // Independent cards hang from a thin, gently sagging line. Empty space stays transparent.
         int CardsPerPage()
         {
-            return Math.Max(1, (int)((shelfWidth - 112) / 218) - 1); // Reserve one hanging slot for help.
+            return Math.Max(1, (int)((shelfWidth - 112 - TipsSlot) / SlotWidth)); // The Tips card takes its own slot.
         }
         int VisibleCardCount()
         {
             return Math.Min(CardsPerPage(), Deck().Count);
         }
         // The line shows up to CardsPerPage() cards starting at `first`; `focus` is the highlighted card.
-        sealed class LineCard { internal FrameworkElement Element; internal int Index; internal ScaleTransform Scale; internal UIElement Shade; }
+        // Shift and Drop place a card relative to the rope point it hangs from, so a glide can move it along the rope.
+        sealed class LineCard { internal FrameworkElement Element; internal int Index; internal ScaleTransform Scale; internal TranslateTransform Press; internal UIElement Shade; internal double Shift, Drop; }
         readonly List<LineCard> lineCards = new List<LineCard>();
-        int first, focus, rollDelta;
-        double wheelRest;
+        int first, focus;
+        // Scrolling glides the line: `view` is where it is now and `target` where it is heading, both in cards from the start.
+        // While it glides, `first` is the whole card at or left of `view`, and one more card hangs on each side to slide in.
+        double view, target;
+        bool gliding;
+        DateTime lastFrame;
+        DispatcherTimer settle;
         DateTime rollingUntil;
-        const double SlotWidth = 218;
+        // Every card hangs in a slot this wide: 218 at the original size, wider by as much as the widest card (a screenshot, 200) has grown.
+        double SlotWidth { get { return Math.Round(218 + (CardScale - 1) * 200); } }
         int LastFirst(int count) { return Math.Max(0, count - CardsPerPage()); }
-        // Wheel and swipe: move the line itself by whole cards. With everything in view they move the focus.
+        // The ‹ › buttons and the tray: glide the line by whole cards. With every card in view there is nothing to move.
         internal void Roll(int step)
         {
-            int count = Deck().Count; if (count == 0) return;
-            if (count <= CardsPerPage()) { StepFocus(step); return; }
-            int next = Math.Max(0, Math.Min(LastFirst(count), first + step));
-            if (next == first) return;
-            rollDelta = next - first; first = next;
-            focus = Math.Max(first, Math.Min(first + CardsPerPage() - 1, focus));
-            lastInside = DateTime.Now; Render();
+            if (Deck().Count <= CardsPerPage()) return;
+            lastInside = DateTime.Now; GlideTo(Math.Round(target) + step, true);
         }
         // Keys: move the focus by one card and keep it centred while the line holds more cards than fit.
         internal void StepFocus(int step)
         {
             int count = Deck().Count; if (count == 0) return;
             focus = Math.Max(0, Math.Min(count - 1, focus + step));
-            int next = count <= CardsPerPage() ? 0 : Math.Max(0, Math.Min(LastFirst(count), focus - CardsPerPage() / 2));
             lastInside = DateTime.Now;
-            if (next != first) { rollDelta = next - first; first = next; Render(); }
-            else ApplyFocus(true);
+            int next = count <= CardsPerPage() ? 0 : Math.Max(0, Math.Min(LastFirst(count), focus - CardsPerPage() / 2));
+            if (next != (int)Math.Round(target)) GlideTo(next, true);
+            ApplyFocus(true);
         }
+        // Wheel and swipe move the line itself, never just the highlight. A wheel notch is one card; a touchpad moves it
+        // as far as the fingers go, and the line settles on a whole card a moment after they stop.
         void WheelBy(int delta)
         {
-            wheelRest += delta;
-            while (Math.Abs(wheelRest) >= 120) { int direction = wheelRest > 0 ? 1 : -1; wheelRest -= 120 * direction; Roll(-direction); }
+            if (reorderSlots != null || dragging || Deck().Count <= CardsPerPage()) return;
+            lastInside = DateTime.Now;
+            GlideTo(target - delta / 120.0, false);
+            if (settle == null)
+            {
+                settle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+                settle.Tick += delegate { settle.Stop(); if (Math.Abs(target - Math.Round(target)) > 1e-6) GlideTo(Math.Round(target), true); };
+            }
+            settle.Stop(); settle.Start();
+        }
+        void GlideTo(double to, bool whole)
+        {
+            to = Math.Max(0, Math.Min(LastFirst(Deck().Count), to));
+            if (whole) to = Math.Round(to);
+            target = to;
+            int perPage = CardsPerPage(), start = (int)Math.Round(target);
+            focus = Math.Max(start, Math.Min(start + perPage - 1, focus)); // The highlight stays on a card that will be in view.
+            CloseImagePreview(); CloseNotePreview();
+            if (gliding) return;
+            gliding = true; rollingUntil = DateTime.MaxValue; lastFrame = DateTime.Now;
+            WakeSwing(); // In Fun the cards lag behind the glide and swing.
+            Render(); // Hangs the extra card on each side now, so the one sliding in is there from the start.
+            CompositionTarget.Rendering += GlideFrame;
+        }
+        // For the built-in tests: the scroll state, and the wheel without a mouse.
+        internal double ScrollView { get { return view; } }
+        internal double ScrollTarget { get { return target; } }
+        internal bool Gliding { get { return gliding; } }
+        internal int FirstShown { get { return first; } }
+        internal int PerPage { get { return CardsPerPage(); } }
+        internal void WheelForTest(int delta) { WheelBy(delta); }
+        // Shows the key strip as the keyboard mode would, without taking any keys from other apps.
+        internal void ShowKeyStripForTest(bool on) { lineKeys = on; UpdateToast(); }
+        internal FrameworkElement CardOnLine(object item) { var found = lineCards.FirstOrDefault(x => Object.ReferenceEquals(Deck()[x.Index], item)); return found == null ? null : found.Element; }
+        // Each frame closes a fixed share of the remaining distance: quick at first, easing in, never past the target.
+        void GlideFrame(object sender, EventArgs e)
+        {
+            if (!gliding) return;
+            // A slow frame still moves the line its share; only a long stall is capped.
+            DateTime now = DateTime.Now; double seconds = Math.Min(0.25, (now - lastFrame).TotalSeconds); lastFrame = now;
+            view += (target - view) * (1 - Math.Exp(-seconds / 0.075));
+            bool arrived = Math.Abs(target - view) < 0.003;
+            if (arrived) view = target;
+            PlaceBand();
+            if (arrived && target == Math.Round(target)) EndGlide();
+        }
+        // Moves the cards to `view`; when it passes a whole card, hangs the next set (one more on each side).
+        void PlaceBand()
+        {
+            int start = (int)Math.Floor(view + 1e-6);
+            if (start != first) { first = start; Render(); return; }
+            foreach (var card in lineCards) PlaceOnLine(card);
+        }
+        void PlaceOnLine(LineCard card)
+        {
+            int perPage = CardsPerPage(), count = Math.Min(perPage, Deck().Count);
+            double slot = card.Index - view, center = HangingCenter(slot, count);
+            Canvas.SetLeft(card.Element, center + card.Shift); Canvas.SetTop(card.Element, RopeY(center) + card.Drop);
+            // Past either end of the visible slots a card fades out, and stops taking the pointer when mostly gone.
+            // A slim Tips card hides less, so on that side a card is gone within half a slot.
+            double outside = Math.Max(0, Math.Max(-slot, (slot - (count - 1)) * (CompactTips ? 2 : 1)));
+            card.Element.Opacity = Math.Max(0, 1 - outside);
+            card.Element.IsHitTestVisible = outside < 0.5;
+        }
+        void EndGlide()
+        {
+            if (gliding) CompositionTarget.Rendering -= GlideFrame;
+            gliding = false; view = target; rollingUntil = DateTime.Now;
+            ApplyFocus(true);
+            // Cards slid under a still pointer; let the one under it take the highlight now.
+            Mouse.Synchronize();
+        }
+        // Stops a glide where it is going, without animating, for a redraw that cannot wait (closing, a new screen).
+        void StopGlide()
+        {
+            if (gliding) CompositionTarget.Rendering -= GlideFrame;
+            gliding = false; view = target = first; rollingUntil = DateTime.Now;
         }
         void ApplyFocus(bool animate)
         {
@@ -175,24 +254,24 @@ namespace Snapline
                 card.Shade.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(shade, time));
             }
         }
-        // Gives a freshly hung card its focus scaling and, after a roll, slides it in from where it hung before.
-        void Dress(FrameworkElement card, object item, int deckIndex, int rolled)
+        // Gives a freshly hung card its focus scaling, its peg and its gestures, and remembers where it hangs from the rope.
+        void Dress(FrameworkElement card, object item, int deckIndex, double center)
         {
             var scale = new ScaleTransform(1, 1, card.Width / 2, 0);
-            var group = new TransformGroup(); group.Children.Add(scale); group.Children.Add(card.RenderTransform);
+            var press = new TranslateTransform(); // The small sink while the card is pressed.
+            var fall = new TranslateTransform(); // In Fun, a newly hung card drops onto the line.
+            var group = new TransformGroup(); group.Children.Add(scale); group.Children.Add(press); group.Children.Add(fall); group.Children.Add(card.RenderTransform);
+            var hanging = hangingMotions.Find(x => Object.ReferenceEquals(x.Card, card));
+            if (hanging != null) hanging.Fall = fall;
             card.RenderTransform = group; card.CacheMode = new BitmapCache(Math.Max(1, Dpi()) * 1.05);
             var shade = new Border { Background = Brush(Theme.Alpha("66", Theme.Bg)), IsHitTestVisible = false, Opacity = 0, Tag = "FocusShade" };
             ((Panel)card).Children.Add(shade);
-            lineCards.Add(new LineCard { Element = card, Index = deckIndex, Scale = scale, Shade = shade });
+            var entry = new LineCard { Element = card, Index = deckIndex, Scale = scale, Press = press, Shade = shade, Shift = Canvas.GetLeft(card) - center, Drop = Canvas.GetTop(card) - RopeY(center) };
+            lineCards.Add(entry);
             card.MouseEnter += delegate { if (DateTime.Now < rollingUntil || focus == deckIndex) return; focus = deckIndex; ApplyFocus(true); };
             DressPeg((Panel)card, item, deckIndex - first + 1);
             AttachGestures(card, item);
-            if (rolled == 0) return;
-            double left = Canvas.GetLeft(card), top = Canvas.GetTop(card), shift = rolled * SlotWidth;
-            double oldCenter = Math.Max(24, Math.Min(shelfWidth - 24, left + card.Width / 2 + shift));
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut }; var time = TimeSpan.FromMilliseconds(220);
-            card.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(left + shift, left, time) { EasingFunction = ease });
-            card.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(RopeY(oldCenter) + 15, top, time) { EasingFunction = ease });
+            PlaceOnLine(entry);
         }
         bool lineKeys;
         IntPtr lineKeysOwner;
@@ -208,12 +287,15 @@ namespace Snapline
             // 1 to 9 grab the card with that number on its peg.
             for (int i = 0; i < 9; i++)
                 if (on) Native.RegisterHotKey(handle, 30 + i, 0x4000u, (uint)(0x31 + i)); else Native.UnregisterHotKey(handle, 30 + i);
+            // Ctrl + Z brings back the card just removed.
+            if (on) Native.RegisterHotKey(handle, 26, 0x4002u, 0x5A); else Native.UnregisterHotKey(handle, 26);
             foreach (var card in lineCards)
             {
                 var panel = card.Element as Panel; if (panel == null) continue;
                 foreach (var number in panel.Children.OfType<Border>().Where(x => Object.Equals(x.Tag, "PegNumber")))
                     number.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
             }
+            UpdateToast(); // Shows or hides the strip naming these keys.
         }
         void LineDigit(int number)
         {
@@ -236,10 +318,17 @@ namespace Snapline
                 case 25: ToggleKeep(item); break;
             }
         }
-        double HangingCenter(int index, int imageCount)
+        // The cards and the Tips card form one centred group. Tips takes a full slot, or a slim one when compact.
+        bool CompactTips { get { return store.Settings.TipsCard == 1; } }
+        double TipsWidth { get { return CompactTips ? Math.Round(64 * CardScale) : Math.Round(172 * CardScale); } }
+        double TipsSlot { get { return CompactTips ? TipsWidth + 36 : SlotWidth; } }
+        double HangingCenter(double index, int imageCount)
         {
-            // The images and help card form a single centered group.
-            return (shelfWidth - (imageCount + 1) * 218) / 2 + (index + 0.5) * 218;
+            return (shelfWidth - imageCount * SlotWidth - TipsSlot) / 2 + (index + 0.5) * SlotWidth;
+        }
+        double TipsCenter(int imageCount)
+        {
+            return (shelfWidth - imageCount * SlotWidth - TipsSlot) / 2 + imageCount * SlotWidth + TipsSlot / 2;
         }
         List<System.Windows.Point> RopeNodes()
         {
@@ -249,7 +338,7 @@ namespace Snapline
             double sag = (42 + 2 * Math.Min(hangingCount, 4)) * Slack;
             for (int i = 0; i < hangingCount; i++)
             {
-                double x = HangingCenter(i, imageCount);
+                double x = i == imageCount ? TipsCenter(imageCount) : HangingCenter(i, imageCount);
                 double loadPosition = (i + 1.0) / (hangingCount + 1.0);
                 nodes.Add(new System.Windows.Point(x, RopeTop + sag * Math.Sin(Math.PI * loadPosition)));
             }
@@ -287,6 +376,7 @@ namespace Snapline
             if (!expanded) motionLayer.Children.Clear();
             if (!expanded)
             {
+                StopGlide(); RestSwings();
                 var mark = new Border { Width = TopHoverGate.Width, Height = TopHoverGate.IndicatorHeight, CornerRadius = Theme.Radius(1), Background = Brush(Theme.Accent), ToolTip = "Touch this line to open · See the 'Tips' card for help" };
                 indicator = mark;
                 mark.MouseEnter += delegate { TryRevealFromIndicator(); };
@@ -328,26 +418,35 @@ namespace Snapline
             var deck = Deck();
             focus = Math.Max(0, Math.Min(deck.Count - 1, focus));
             first = Math.Max(0, Math.Min(LastFirst(deck.Count), first));
-            if (focus < first) first = focus;
-            if (focus >= first + perPage) first = focus - perPage + 1;
-            var shown = deck.Skip(first).Take(perPage).ToArray();
-            int rolled = rollDelta; rollDelta = 0;
-            for (int i = 0; i < shown.Length; i++)
+            if (!gliding)
             {
-                double center = HangingCenter(i, shown.Length);
-                var memo = shown[i] as Memo; var link = shown[i] as Link;
-                if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, i);
-                else if (link != null) MakeLinkCard(link, center, RopeY(center) + 15, i);
-                else MakeCard((Shot)shown[i], center, RopeY(center) + 15, i);
-                Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], shown[i], first + i, rolled);
+                // Settled: the line shows the focused card, and a later glide starts from here.
+                if (focus < first) first = focus;
+                if (focus >= first + perPage) first = focus - perPage + 1;
+                view = target = first;
             }
-            if (rolled != 0) rollingUntil = DateTime.Now.AddMilliseconds(260);
+            int visible = Math.Min(perPage, deck.Count);
+            // The cards in view, plus while the line glides one more on each side to slide in from or out to.
+            int from = gliding ? Math.Max(0, first - 1) : first, to = Math.Min(deck.Count, first + perPage + (gliding ? 1 : 0));
+            for (int k = from; k < to; k++)
+            {
+                double center = HangingCenter(k - view, visible);
+                var memo = deck[k] as Memo; var link = deck[k] as Link;
+                if (memo != null) MakeNoteCard(memo, center, RopeY(center) + 15, k);
+                else if (link != null) MakeLinkCard(link, center, RopeY(center) + 15, k);
+                else MakeCard((Shot)deck[k], center, RopeY(center) + 15, k);
+                Dress((FrameworkElement)canvas.Children[canvas.Children.Count - 1], deck[k], k, center);
+            }
+            var shown = deck.Skip(first).Take(perPage).ToArray();
             ApplyFocus(false);
-            if (first > 0) Place(Tool("‹", first + " more to the left (scroll)", delegate { Roll(-1); }), 34, 29);
+            if (first > 0) { var back = Tool("‹", first + " more to the left (scroll)", delegate { Roll(-1); }); Panel.SetZIndex(back, 20); Place(back, 34, 29); }
             int hiddenRight = deck.Count - first - shown.Length;
-            if (hiddenRight > 0) Place(Tool("›", hiddenRight + " more to the right (scroll)", delegate { Roll(1); }), shelfWidth - 62, 29);
-            double helpCenter = HangingCenter(shown.Length, shown.Length);
+            if (hiddenRight > 0) { var more = Tool("›", hiddenRight + " more to the right (scroll)", delegate { Roll(1); }); Panel.SetZIndex(more, 20); Place(more, shelfWidth - 62, 29); }
+            double helpCenter = TipsCenter(shown.Length);
             MakeHelpCard(helpCenter, RopeY(helpCenter) + 15, shown.Length);
+            // Cards sliding out on the right pass behind the Tips card.
+            Panel.SetZIndex((UIElement)canvas.Children[canvas.Children.Count - 1], 10);
+            SettleSwings(deck);
             UpdateToast();
         }
         void UpdateToast()
@@ -356,6 +455,20 @@ namespace Snapline
             toastElement = null;
             if (!expanded) return;
             var row = new StackPanel { Orientation = Orientation.Horizontal };
+            if (lineKeys)
+            {
+                // While the keys belong to the line, say which ones; a mode you cannot see is a mode you cannot use.
+                var keys = new TextBlock { FontSize = Theme.Size(11), Foreground = Brush(Theme.Mid), VerticalAlignment = VerticalAlignment.Center };
+                foreach (var pair in new[] { new[] { "← →", "roll" }, new[] { "Enter", "copy" }, new[] { "1–9", "copy that card" }, new[] { "K", "keep" }, new[] { "Del", "remove" }, new[] { "Ctrl+Z", "undo" }, new[] { "Esc", "close" } })
+                {
+                    if (keys.Inlines.Count > 0) keys.Inlines.Add(new System.Windows.Documents.Run("   ·   "));
+                    keys.Inlines.Add(new System.Windows.Documents.Run(pair[0]) { Foreground = Brush(Theme.Light), FontWeight = FontWeights.SemiBold });
+                    keys.Inlines.Add(new System.Windows.Documents.Run(" " + pair[1]));
+                }
+                var strip = new Border { Child = keys, Padding = new Thickness(12, 6, 12, 6), Background = Brush(Theme.Alpha("EA", Theme.Panel)), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1),
+                    IsHitTestVisible = false, Tag = "LineKeys", Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+                row.Children.Add(strip);
+            }
             if (undoItem != null)
             {
                 var words = new TextBlock { FontSize = Theme.Size(12), Foreground = Brush(Theme.Text), VerticalAlignment = VerticalAlignment.Center };
@@ -387,32 +500,36 @@ namespace Snapline
             if (row.Children.Count == 0) return;
             row.Measure(new System.Windows.Size(Double.PositiveInfinity, Double.PositiveInfinity));
             toastElement = row;
-            Place(row, (shelfWidth - row.DesiredSize.Width) / 2, 238 + SlackDrop);
+            Place(row, (shelfWidth - row.DesiredSize.Width) / 2, 238 + SlackDrop + CardDrop);
         }
 
         void MakeHelpCard(double center, double y, int index)
         {
-            const double width = 172, height = 148;
+            double size = CardScale, width = TipsWidth, height = Math.Round(148 * size);
             double lean = Lean(1.8);
             var swing = new RotateTransform(lean, width / 2, -15);
             var grid = new Grid { Width = width, Height = height, RenderTransform = swing, Cursor = Cursors.Hand };
             AutomationProperties.SetName(grid, "Tips (hover to view)");
-            var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
-            var title = Text("Tips", 18, Theme.White);
+            var content = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12 * size) };
+            if (CompactTips) FillCompactTips(content, size);
+            else
+            {
+            var title = Text("Tips", 18 * size, Theme.White);
             title.FontWeight = FontWeights.SemiBold; title.HorizontalAlignment = HorizontalAlignment.Center;
             content.Children.Add(title);
-            var subtitle = Text("Hover for help", 11, Theme.Mid);
-            subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4, 0, 0);
+            var subtitle = Text("Hover for help", 11 * size, Theme.Mid);
+            subtitle.HorizontalAlignment = HorizontalAlignment.Center; subtitle.Margin = new Thickness(0, 4 * size, 0, 0);
             content.Children.Add(subtitle);
             var capture = Tool("✂ Capture (copy only)", "Copies only; use the capture shortcut to hang automatically", StartCapture);
-            capture.FontSize = Theme.Size(11); capture.Height = 26; capture.Margin = new Thickness(0, 10, 0, 0);
+            capture.FontSize = Theme.Size(11 * size); capture.Height = Math.Round(26 * size); capture.Margin = new Thickness(0, 10 * size, 0, 0);
             capture.Background = Brush(Theme.Inset); capture.Foreground = Brush(Theme.Text);
             capture.ToolTip = null; content.Children.Add(capture);
             var addNote = Tool("＋ Note", "New note", NewNote);
-            addNote.FontSize = Theme.Size(12); addNote.Height = 27; addNote.Margin = new Thickness(0, 6, 0, 0);
+            addNote.FontSize = Theme.Size(12 * size); addNote.Height = Math.Round(27 * size); addNote.Margin = new Thickness(0, 6 * size, 0, 0);
             addNote.Background = Brush(Theme.Accent); addNote.Foreground = Brush(Theme.Bg);
             System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
             content.Children.Add(addNote);
+            }
             grid.Children.Add(new Border
             {
                 CornerRadius = Theme.Radius(5), Background = Brush(Theme.Panel),
@@ -426,10 +543,10 @@ namespace Snapline
             AddHangingPeg(grid);
             AddBin(grid);
             helpTip = HelpPopup();
-            helpTip.PlacementTarget = grid;
+            helpTip.PlacementTarget = grid; helpTip.HorizontalOffset = (width - 306) / 2; // Centred under the card; the help is 306 wide.
             grid.ToolTip = helpTip;
             RegisterHoverPreview(grid);
-            ToolTipService.SetInitialShowDelay(grid, 220);
+            ToolTipService.SetInitialShowDelay(grid, Tuning.PreviewDelay(store.Settings, 220));
             ToolTipService.SetShowDuration(grid, 60000);
             var breeze = new DoubleAnimation(lean - 0.6, lean + 0.6, TimeSpan.FromSeconds(3.8))
             {
@@ -442,6 +559,23 @@ namespace Snapline
             grid.MouseLeave += delegate { if (!hoverEffectsPaused) SetHangingAnimation(swing, breeze); };
             grid.MouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) { e.Handled = true; if (HoverPreviewAllowed) helpTip.IsOpen = !helpTip.IsOpen; };
             Place(grid, center - width / 2, y);
+        }
+        // The compact Tips card: a "?" over two square buttons, capture and new note. Resting on it opens the same help.
+        void FillCompactTips(StackPanel content, double size)
+        {
+            content.Margin = new Thickness(8 * size);
+            var mark = Text("?", 26 * size, Theme.White);
+            mark.FontWeight = FontWeights.SemiBold; mark.HorizontalAlignment = HorizontalAlignment.Center;
+            content.Children.Add(mark);
+            var capture = Tool("✂", "Capture a region (copies only)", StartCapture);
+            capture.FontSize = Theme.Size(14 * size); capture.Width = capture.Height = Math.Round(34 * size); capture.Padding = new Thickness(0); capture.Margin = new Thickness(0, 8 * size, 0, 0);
+            capture.Background = Brush(Theme.Inset); capture.Foreground = Brush(Theme.Text);
+            content.Children.Add(capture);
+            var addNote = Tool("＋", "New note", NewNote);
+            addNote.FontSize = Theme.Size(16 * size); addNote.Width = addNote.Height = Math.Round(34 * size); addNote.Padding = new Thickness(0); addNote.Margin = new Thickness(0, 6 * size, 0, 0);
+            addNote.Background = Brush(Theme.Accent); addNote.Foreground = Brush(Theme.Bg);
+            System.Windows.Automation.AutomationProperties.SetAutomationId(addNote, "NewNote");
+            content.Children.Add(addNote);
         }
         void AddHangingPeg(Grid grid)
         {
@@ -474,7 +608,7 @@ namespace Snapline
             double dpi = Dpi();
             double maxWidth = Math.Max(100, Math.Min(760, screen.WorkingArea.Width / dpi - 64));
             double remarkBudget = String.IsNullOrWhiteSpace(shot.Remark) ? 0 : Math.Max(48, Math.Min(140, screen.WorkingArea.Height / dpi / 5));
-            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300 - remarkBudget));
+            double maxHeight = Math.Max(80, Math.Min(460, screen.WorkingArea.Height / dpi - 300 - CardDrop - remarkBudget));
             double aspect = shot.Thumb.PixelWidth / (double)Math.Max(1, shot.Thumb.PixelHeight);
             double width = Math.Min(maxWidth, maxHeight * aspect), height = width / aspect;
             double bodyWidth = Math.Max(180, width);
@@ -530,11 +664,11 @@ namespace Snapline
         }
         void MakeCard(Shot shot, double center, double y, int index)
         {
-            double imageWidth = Math.Max(1, shot.Thumb.PixelWidth), imageHeight = Math.Max(1, shot.Thumb.PixelHeight);
-            double scale = Math.Min(192 / imageWidth, 124 / imageHeight);
+            double imageWidth = Math.Max(1, shot.Thumb.PixelWidth), imageHeight = Math.Max(1, shot.Thumb.PixelHeight), size = CardScale;
+            double scale = Math.Min(192 * size / imageWidth, 124 * size / imageHeight);
             // Whole numbers: with layout rounding, a fractional size makes WPF clip the peg above the card.
-            double width = Math.Round(Math.Max(70, imageWidth * scale)) + 7;
-            double height = Math.Round(Math.Max(54, imageHeight * scale)) + 7;
+            double width = Math.Round(Math.Max(70 * size, imageWidth * scale)) + 7;
+            double height = Math.Round(Math.Max(54 * size, imageHeight * scale)) + 7;
             double lean = Lean(new[] { -2.2, 1.4, -1.1, 2.0, -0.6 }[index % 5]);
             double cardWidth = width;
             var swing = new RotateTransform(lean, cardWidth / 2, -15);
@@ -555,7 +689,7 @@ namespace Snapline
             AutomationProperties.SetAutomationId(grid, "ShotCard-" + shot.File);
             grid.ToolTip = ImagePopup(shot, grid);
             RegisterHoverPreview(grid);
-            ToolTipService.SetInitialShowDelay(grid, 300);
+            ToolTipService.SetInitialShowDelay(grid, Tuning.PreviewDelay(store.Settings, 300));
             ToolTipService.SetBetweenShowDelay(grid, 100);
             ToolTipService.SetShowDuration(grid, 60000);
             grid.PreviewMouseDown += delegate { CloseImagePreview(); };
