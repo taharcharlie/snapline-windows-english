@@ -30,43 +30,37 @@ namespace Snapline
 {
     sealed partial class Shelf
     {
-        ToolTip HelpPopup()
+        // The Tips: the few things worth knowing day to day, grouped by gesture. The full list lives in tray → Help.
+        internal Border HelpBody()
         {
-            var content = new StackPanel { Width = 278 };
+            var content = new StackPanel { Width = 300 };
             var title = Text("Snapline · Tips", 14, Theme.Accent);
             title.FontWeight = FontWeights.SemiBold; title.Margin = new Thickness(0, 0, 0, 10);
             content.Children.Add(title);
-            AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture a region and hang it" : "Set a capture shortcut in the tray menu");
+            AddHelpRow(content, "Click · double-click", "Copy · open or edit");
+            AddHelpRow(content, "Drag · pull down", "Reorder · drop in an app, or here to delete");
+            AddHelpRow(content, "Peg · right-click", "Delete (Undo) · keep, caption, more");
+            AddHelpRow(content, "Drop on the line", "Hang a file, link or text");
+            AddHelpRow(content, CaptureShortcutLabel, ShortcutCollects ? "Capture and hang" : "Capture: set a shortcut in Preferences");
             if (!CaptureHotkeyRegistered && store.Settings.CaptureShortcut != "None")
-                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in the tray menu", FontSize = Theme.Size(10), Foreground = Brush(Theme.Warn), Margin = new Thickness(0, 0, 0, 7) });
-            AddHelpRow(content, "Scissors button", "Copies only, does not hang");
-            AddHelpRow(content, "Touch the top line", "Opens the line");
-            AddHelpRow(content, "Slip under an image", "Add or edit its caption");
-            if (!LineShortcut.Open.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Open), "Pin open / close");
-            AddHelpRow(content, "Scroll or ← →", "Roll the line; Enter copies");
-            AddHelpRow(content, "1 to 9", LineShortcut.Open.IsOff(store.Settings) ? "After pinning open: copy that card" : "After " + LineShortcutLabel(LineShortcut.Open) + ": copy that card");
-            if (!LineShortcut.Hang.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Hang), "Hang what is on the clipboard");
-            if (!LineShortcut.Note.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Note), "Start a new note");
-            AddHelpRow(content, "＋ Note", "Quick notes, saved on this PC");
-            AddHelpRow(content, "Click / double-click a note", "Copy its text / edit it");
-            AddHelpRow(content, "Hover an image", "Enlarged preview while hovering");
-            AddHelpRow(content, "Click / double-click a card", "Copy it / open it");
-            AddHelpRow(content, "Drop a file, link or text here", "Hangs a reference card, or a note");
-            AddHelpRow(content, "Drag along the line", "Reorder the cards");
-            AddHelpRow(content, "Pull a card down", "Drop it in an app, or on this card to delete");
-            AddHelpRow(content, "Click a peg", "Delete; Undo shows for a few seconds");
-            AddHelpRow(content, "Right-click → Keep", "Yellow peg: never cleared or deleted");
-            AddHelpRow(content, "Hold an image", "Edit in Paint (a bar fills first)");
-            AddHelpRow(content, "Right-click an image", "Save as, remove and more");
-            var footer = Text("Only shortcut captures are collected; customise in the tray", 10, Theme.Mid);
-            footer.Margin = new Thickness(0, 7, 0, 0); content.Children.Add(footer);
+                content.Children.Add(new TextBlock { Text = CaptureShortcutLabel + " is in use; change it in Preferences", FontSize = Theme.Size(10), Foreground = Brush(Theme.Warn), Margin = new Thickness(0, 0, 0, 7), TextWrapping = TextWrapping.Wrap });
+            if (!LineShortcut.Open.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Open), "Pin open; then ← →, 1–9");
+            if (!LineShortcut.Hang.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Hang), "Hang the clipboard");
+            if (!LineShortcut.Note.IsOff(store.Settings)) AddHelpRow(content, LineShortcutLabel(LineShortcut.Note), "New note");
+            AddHelpRow(content, "∑ Calc in a note", "Sums, averages, maths, units; or a first line math, sum or avg");
+            var footer = Text("More in tray → Help · settings in tray → Preferences…", 10, Theme.Mid);
+            footer.Margin = new Thickness(0, 7, 0, 0); footer.TextWrapping = TextWrapping.Wrap; content.Children.Add(footer);
             if (store.Settings.CaptureShortcut == "CtrlB")
             {
-                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in the tray", 10, Theme.Warn);
-                shortcutNote.Margin = new Thickness(0, 5, 0, 0); content.Children.Add(shortcutNote);
+                var shortcutNote = Text("Ctrl + B overrides Bold; turn off or change in Preferences", 10, Theme.Warn);
+                shortcutNote.Margin = new Thickness(0, 5, 0, 0); shortcutNote.TextWrapping = TextWrapping.Wrap; content.Children.Add(shortcutNote);
             }
-            var body = new Border { Child = content, Padding = new Thickness(14), CornerRadius = Theme.Radius(10),
+            return new Border { Child = content, Padding = new Thickness(14), CornerRadius = Theme.Radius(10),
                 Background = Brush(Theme.Panel), BorderBrush = Brush(Theme.Rule), BorderThickness = new Thickness(1) };
+        }
+        ToolTip HelpPopup()
+        {
+            var body = HelpBody();
             var tip = new ToolTip { Content = body, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
                 Padding = new Thickness(0), HasDropShadow = true, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
                 HorizontalOffset = -67, VerticalOffset = 7, FontFamily = FontFamily };
@@ -77,7 +71,7 @@ namespace Snapline
         void AddHelpRow(StackPanel content, string key, string action)
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var label = Text(key, 12, Theme.Light); label.TextWrapping = TextWrapping.Wrap; label.Margin = new Thickness(0, 0, 8, 0);
             var detail = new TextBlock { Text = action, FontSize = Theme.Size(12), Foreground = Brush(Theme.Mid), TextWrapping = TextWrapping.Wrap };

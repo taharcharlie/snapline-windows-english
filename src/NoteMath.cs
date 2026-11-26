@@ -29,7 +29,7 @@ namespace Snapline
             if (String.IsNullOrEmpty(text)) return Mode.None;
             int end = text.IndexOf('\n');
             string first = (end < 0 ? text : text.Substring(0, end)).Trim().ToLowerInvariant();
-            return first == "math" ? Mode.Math : first == "sum" ? Mode.Sum : first == "avg" ? Mode.Avg : Mode.None;
+            return first == "math" ? Mode.Math : first == "sum" ? Mode.Sum : first == "avg" || first == "average" ? Mode.Avg : Mode.None;
         }
 
         internal static Outcome Evaluate(string text)

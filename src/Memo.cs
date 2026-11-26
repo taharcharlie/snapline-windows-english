@@ -148,6 +148,7 @@ namespace Snapline
         readonly Memo memo;
         readonly TextBox input;
         readonly TextBlock status, placeholder, total;
+        readonly Button calcButton;
         // A calculation note's results, each at the end of its line, drawn over the text.
         readonly Canvas results = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
         bool resultsPending;
@@ -226,6 +227,14 @@ namespace Snapline
                 b.Click += delegate { run(); };
                 palette.Children.Add(b);
             }
+            // ∑ Calc: makes the note a calculation (or plain again) without having to know the keywords. It names the mode in use.
+            // In the heading, beside the close button: there is room for its longest name ("∑ Average") at every size and font.
+            calcButton = MemoTheme.Button("∑ Calc", "Calculate"); calcButton.Focusable = false; calcButton.Height = 30; calcButton.Padding = new Thickness(10, 0, 10, 0);
+            calcButton.HorizontalAlignment = HorizontalAlignment.Right; calcButton.VerticalAlignment = VerticalAlignment.Top; calcButton.Margin = new Thickness(0, 0, 38, 0);
+            calcButton.ToolTip = "Work this note out: Math answers each line, Sum adds up the numbers, Average averages them; units convert too (5 km in miles)";
+            System.Windows.Automation.AutomationProperties.SetAutomationId(calcButton, "NoteFormat-Calc");
+            calcButton.Click += delegate { ShowCalcMenu(); };
+            heading.Children.Add(calcButton);
             Grid.SetRow(palette, 1); content.Children.Add(palette);
             Grid.SetRow(pictureRow, 2); content.Children.Add(pictureRow);
             var writing = new Grid { Margin = new Thickness(0, 0, 0, 15) };
@@ -242,15 +251,15 @@ namespace Snapline
             System.Windows.Automation.AutomationProperties.SetAutomationId(input, "NoteText");
             System.Windows.Automation.AutomationProperties.SetName(input, "Note text");
             writing.Children.Add(input);
-            placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…", FontSize = Theme.Size(15 * scale), LineHeight = lineHeight,
+            placeholder = new TextBlock { Text = "Write down a task, an idea,\nor a small goal for today…\n\n∑ Calc (top right) works a note out: sums, averages, maths, units.", FontSize = Theme.Size(15 * scale), LineHeight = lineHeight,
                 Foreground = MemoTheme.Brush(Theme.Mid), IsHitTestVisible = false, Margin = new Thickness(13, 10, 10, 0), Visibility = note.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             writing.Children.Add(placeholder);
             writing.Children.Add(results);
             total = new TextBlock { FontSize = Theme.Size(13 * scale), FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(0, 0, 16, 8), IsHitTestVisible = false };
             writing.Children.Add(total);
-            input.TextChanged += delegate { ScheduleResults(); };
-            Loaded += delegate { ScheduleResults(); }; // The note's own results, as soon as it opens.
+            input.TextChanged += delegate { ScheduleResults(); UpdateCalcButton(); };
+            Loaded += delegate { ScheduleResults(); UpdateCalcButton(); }; // The note's own results and kind, as soon as it opens.
             input.SizeChanged += delegate { ScheduleResults(); };
             input.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(delegate { ScheduleResults(); }));
             // In a calculation note, "=" at the end of a line fills in its result; on any other line it is just "=".
@@ -285,6 +294,51 @@ namespace Snapline
             };
             Closing += delegate(object sender, System.ComponentModel.CancelEventArgs e) { if (!FlushChanges()) e.Cancel = true; };
             Closed += delegate { saveDelay.Stop(); };
+        }
+        void ShowCalcMenu()
+        {
+            var mode = NoteMath.ModeOf(input.Text);
+            var menu = new ContextMenu { PlacementTarget = calcButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+            var choices = new[]
+            {
+                new { Word = "math", Label = "Math — answer each line  (12*3, 15% of 80, 5 km in miles)", Mode = NoteMath.Mode.Math },
+                new { Word = "sum", Label = "Sum — add up the last number on each line", Mode = NoteMath.Mode.Sum },
+                new { Word = "avg", Label = "Average — average the last number on each line", Mode = NoteMath.Mode.Avg },
+            };
+            foreach (var choice in choices)
+            {
+                string word = choice.Word;
+                var item = new MenuItem { Header = choice.Label, IsChecked = mode == choice.Mode };
+                item.Click += delegate { SetCalculation(word); };
+                menu.Items.Add(item);
+            }
+            menu.Items.Add(new Separator());
+            var plain = new MenuItem { Header = "Plain note", IsEnabled = mode != NoteMath.Mode.None };
+            plain.Click += delegate { SetCalculation(null); };
+            menu.Items.Add(plain);
+            menu.IsOpen = true;
+        }
+        // Puts the keyword ("math", "sum" or "avg") on the note's first line, replacing any there; null makes it a plain note again.
+        internal void SetCalculation(string keyword)
+        {
+            string text = input.Text; int caret = input.CaretIndex;
+            string rest = text;
+            if (NoteMath.ModeOf(text) != NoteMath.Mode.None)
+            {
+                int end = text.IndexOf('\n');
+                rest = end < 0 ? "" : text.Substring(end + 1);
+            }
+            string next = keyword == null ? rest : keyword + "\r\n" + rest;
+            if (next.Length > Store.MaxNoteText) return;
+            input.Text = next;
+            input.Select(Math.Max(0, Math.Min(next.Length, caret + next.Length - text.Length)), 0);
+            input.Focus();
+        }
+        void UpdateCalcButton()
+        {
+            if (calcButton == null) return;
+            var mode = NoteMath.ModeOf(input.Text);
+            calcButton.Content = mode == NoteMath.Mode.Math ? "∑ Math" : mode == NoteMath.Mode.Sum ? "∑ Sum" : mode == NoteMath.Mode.Avg ? "∑ Average" : "∑ Calc";
         }
         void ScheduleResults()
         {
@@ -805,6 +859,13 @@ namespace Snapline
             calcEditor.FlushChanges(); calcEditor.Close(); store.RemoveNote(calcDraft);
             var drawnCalc = new TextBlock(); NoteMarkup.Fill(drawnCalc, "sum\na 1\nb 2", Theme.Accent, null);
             Check(drawnCalc.Inlines.OfType<System.Windows.Documents.Run>().Skip(1).First().Text.Trim() == "Sum: 3", "The card shows the total on the keyword line");
+            Check(NoteMath.ModeOf("Average\n1") == NoteMath.Mode.Avg, "average works as a keyword too");
+            var calcPlain = store.AddNote("coffee 4", "Butter");
+            var calcSwitch = new MemoEditor(store, calcPlain); var switchBox = calcSwitch.Input;
+            calcSwitch.SetCalculation("sum"); Check(switchBox.Text == "sum\r\ncoffee 4", "Calc makes a sum note: " + switchBox.Text);
+            calcSwitch.SetCalculation("math"); Check(switchBox.Text == "math\r\ncoffee 4", "Choosing another kind replaces the keyword");
+            calcSwitch.SetCalculation(null); Check(switchBox.Text == "coffee 4", "Plain note takes the keyword off");
+            calcSwitch.FlushChanges(); calcSwitch.Close(); store.RemoveNote(calcPlain);
             report.Add("PASS: math, sum, avg and unit conversions in notes; variables; ambiguous commas and dates skipped; ordinary notes untouched; = autocomplete; copy and card show results");
             report.Add("PASS: card size choice persists (saved as NoteSize), unknown sizes fall back to the original, the note editor follows it");
             File.WriteAllLines(System.IO.Path.Combine(root, "memo-results.txt"), report, Encoding.UTF8);

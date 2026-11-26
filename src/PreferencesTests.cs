@@ -230,6 +230,12 @@ namespace Snapline
                             Check(onBin, "A drop to the left of the slim Tips card lands on the bin");
                             shelf.Snapshot(Path.Combine(root, "tips-compact-bin.png"));
                             shelf.ShowBinForTest(false); shelf.Snapshot(Path.Combine(root, "tips-compact.png"));
+                            var help = shelf.HelpBody(); help.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity)); help.Arrange(new Rect(help.DesiredSize)); help.UpdateLayout();
+                            var helpPicture = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(help.DesiredSize.Width), (int)Math.Ceiling(help.DesiredSize.Height), 96, 96, PixelFormats.Pbgra32);
+                            helpPicture.Render(help);
+                            var helpEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); helpEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(helpPicture));
+                            using (var stream = File.Create(Path.Combine(root, "tips-help.png"))) helpEncoder.Save(stream);
+                            Check(help.DesiredSize.Height < 420, "The Tips fit in a short popup: " + help.DesiredSize.Height);
                             report.Add("PASS: compact Tips card fits at least as many cards, keeps its buttons, and its bin reaches full size and takes drops");
                             exit = 0; timer.Stop(); shelf.Close();
                         }
